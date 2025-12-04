@@ -184,8 +184,16 @@
                     <select class="op-select"></select>
                 </label>
                 <label>
-                    <span>Dodatni podaci</span>
-                    <div class="op-summary">-</div>
+                    <span>Jedinica mere</span>
+                    <input type="text" class="op-unit" readonly>
+                </label>
+                <label>
+                    <span>Potrošnja goriva</span>
+                    <input type="text" class="op-fuel" readonly>
+                </label>
+                <label>
+                    <span>Cena operacije</span>
+                    <input type="text" class="op-price" readonly>
                 </label>
             </div>
             <div class="op-extra"></div>
@@ -237,21 +245,29 @@
             opt.textContent = op.name;
             select.appendChild(opt);
         });
-        row.querySelector('.op-summary').textContent = '-';
+        row.querySelector('.op-unit').value = '';
+        row.querySelector('.op-fuel').value = '';
+        row.querySelector('.op-price').value = '';
         row.querySelector('.op-extra').innerHTML = '';
     }
 
     function onOperationChange(row, savedOp = null) {
         const opId = row.querySelector('.op-select').value;
         const op = operations.find(o => o.operation_id === opId);
-        const summary = row.querySelector('.op-summary');
+        const unitInput = row.querySelector('.op-unit');
+        const fuelInput = row.querySelector('.op-fuel');
+        const priceInput = row.querySelector('.op-price');
         const extra = row.querySelector('.op-extra');
         extra.innerHTML = '';
         if (!op) {
-            summary.textContent = '-';
+            unitInput.value = '';
+            fuelInput.value = '';
+            priceInput.value = '';
             return;
         }
-        summary.textContent = `J.m.: ${op.unit}, Potrošnja: ${op.fuel_l_per_unit} l/${op.unit}, Cena: ${op.price_per_unit} din/${op.unit}`;
+        unitInput.value = op.unit || '';
+        fuelInput.value = `${op.fuel_l_per_unit} l/${op.unit}`;
+        priceInput.value = `${op.price_per_unit} din/${op.unit}`;
         const fields = [];
         if (op.unit === 'čas') {
             fields.push({ key: 'hours', label: 'Broj potrošenih časova', type: 'number', step: '0.01', min: '0' });
