@@ -1,0 +1,114 @@
+.agro-wrapper {
+    max-width: 1200px;
+    margin: 20px auto;
+    font-family: 'Helvetica Neue', Arial, sans-serif;
+}
+
+.agro-card {
+    background: #fff;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+    margin-bottom: 20px;
+}
+
+.agro-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 15px;
+    margin-bottom: 15px;
+}
+
+.agro-grid label span {
+    display: block;
+    margin-bottom: 4px;
+    font-weight: 600;
+}
+
+.agro-grid input,
+.agro-grid select,
+.agro-operation-row input,
+.agro-operation-row select,
+.agro-operation-row textarea {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+}
+
+.agro-map {
+    height: 320px;
+    border-radius: 8px;
+    overflow: hidden;
+    margin-bottom: 15px;
+}
+
+.agro-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+.agro-operation-row {
+    border: 1px solid #e1e1e1;
+    padding: 12px;
+    border-radius: 6px;
+    margin-bottom: 12px;
+    background: #fafafa;
+}
+
+.agro-operation-row .row-actions {
+    text-align: right;
+    margin-top: 8px;
+}
+
+.agro-summary-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.agro-summary-table th,
+.agro-summary-table td {
+    border: 1px solid #e1e1e1;
+    padding: 8px;
+    text-align: left;
+}
+
+.agro-pill {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: #eef3ff;
+    color: #1d4ed8;
+    font-size: 12px;
+    margin-left: 6px;
+}
+
+.agro-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+}
+
+.agro-tab {
+    padding: 8px 12px;
+    border-radius: 6px;
+    background: #f3f4f6;
+    border: 1px solid #e5e7eb;
+    cursor: pointer;
+    transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+.agro-tab.active {
+    background: #1d4ed8;
+    color: #fff;
+    border-color: #1d4ed8;
+}
+
+.agro-tab.add-tab {
+    background: #e0f2fe;
+    border-color: #93c5fd;
+    color: #1e3a8a;
+    font-weight: 600;
+}
