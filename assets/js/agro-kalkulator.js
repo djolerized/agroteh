@@ -111,6 +111,10 @@
             }
         });
 
+        map.whenReady(() => {
+            map.invalidateSize();
+        });
+
         renderActiveParcelGeometry();
     }
 
