@@ -233,6 +233,7 @@ class AgroKalkulator
         ?>
         <div class="agro-wrapper">
             <h2>Agro kalkulator</h2>
+            <div class="agro-tabs" id="agro-parcel-tabs"></div>
             <div class="agro-step" data-step="1">
                 <div class="agro-card">
                     <h3>Korak 1: Osnovni podaci</h3>
@@ -255,25 +256,18 @@ class AgroKalkulator
                         </label>
                     </div>
                     <div id="agro-map" class="agro-map"></div>
-                    <div class="agro-actions">
-                        <button class="button button-primary" id="agro-step1-next">Dalje</button>
-                    </div>
                 </div>
             </div>
 
-            <div class="agro-step" data-step="2" style="display:none;">
+            <div class="agro-step" data-step="2">
                 <div class="agro-card">
                     <h3>Korak 2: Operacije</h3>
                     <div id="agro-operations"></div>
                     <button class="button" id="agro-add-operation">Dodaj operaciju</button>
-                    <div class="agro-actions">
-                        <button class="button" id="agro-step2-prev">Nazad</button>
-                        <button class="button button-primary" id="agro-step2-next">Dalje</button>
-                    </div>
                 </div>
             </div>
 
-            <div class="agro-step" data-step="3" style="display:none;">
+            <div class="agro-step" data-step="3">
                 <div class="agro-card">
                     <h3>Korak 3: Prinos i cena</h3>
                     <div class="agro-grid">
@@ -287,17 +281,17 @@ class AgroKalkulator
                         </label>
                     </div>
                     <div class="agro-actions">
-                        <button class="button" id="agro-step3-prev">Nazad</button>
-                        <button class="button button-primary" id="agro-add-parcel">Sačuvaj parcelu</button>
+                        <button class="button button-primary" id="agro-save-parcel">Sačuvaj parcelu</button>
                     </div>
                 </div>
             </div>
 
-            <div class="agro-step" data-step="4" style="display:none;">
+            <div class="agro-step" data-step="4">
                 <div class="agro-card">
                     <h3>Korak 4: Rezultati</h3>
                     <div id="agro-results"></div>
                     <div class="agro-actions">
+                        <button class="button" id="agro-calculate">Izračunaj</button>
                         <button class="button" id="agro-reset">Resetuj kalkulaciju</button>
                         <button class="button button-primary" id="agro-generate-pdf" disabled>PDF izveštaj</button>
                     </div>

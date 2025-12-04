@@ -1,15 +1,24 @@
 (function () {
     const data = window.agroKalkulatorData || {};
     const state = {
-        step: 1,
-        fieldAreaHa: 0,
-        selectedFuel: null,
-        selectedCrop: null,
-        selectedTractor: null,
-        fuelPrice: 0,
-        operations: [],
         parcels: [],
+        activeParcelIndex: 0,
     };
+
+    function createEmptyParcel() {
+        return {
+            cropId: '',
+            tractorId: '',
+            fuelId: '',
+            fuelPrice: 0,
+            fieldAreaHa: 0,
+            polygon: [],
+            operations: [],
+            yieldPerHa: 0,
+            pricePerKg: 0,
+            result: null,
+        };
+    }
 
     const crops = data.crops || [];
     const tractors = data.tractors || [];
@@ -24,14 +33,15 @@
     }, {});
 
     const els = {
-        steps: document.querySelectorAll('.agro-step'),
+        tabs: document.getElementById('agro-parcel-tabs'),
         crop: document.getElementById('agro-crop'),
         tractor: document.getElementById('agro-tractor'),
         fuel: document.getElementById('agro-fuel'),
         area: document.getElementById('agro-area'),
         operationsWrap: document.getElementById('agro-operations'),
         addOperation: document.getElementById('agro-add-operation'),
-        addParcel: document.getElementById('agro-add-parcel'),
+        saveParcel: document.getElementById('agro-save-parcel'),
+        calculate: document.getElementById('agro-calculate'),
         results: document.getElementById('agro-results'),
         reset: document.getElementById('agro-reset'),
         pdf: document.getElementById('agro-generate-pdf'),
@@ -41,11 +51,21 @@
         return new Intl.NumberFormat('sr-RS', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value || 0);
     }
 
-    function switchStep(step) {
-        state.step = step;
-        els.steps.forEach(s => {
-            s.style.display = parseInt(s.dataset.step, 10) === step ? 'block' : 'none';
+    function renderTabs() {
+        if (!els.tabs) return;
+        els.tabs.innerHTML = '';
+        state.parcels.forEach((parcel, index) => {
+            const tab = document.createElement('div');
+            tab.className = 'agro-tab' + (index === state.activeParcelIndex ? ' active' : '');
+            tab.textContent = `Parcela ${index + 1}`;
+            tab.addEventListener('click', () => switchParcel(index));
+            els.tabs.appendChild(tab);
         });
+        const addTab = document.createElement('div');
+        addTab.className = 'agro-tab add-tab';
+        addTab.textContent = 'Nova parcela +';
+        addTab.addEventListener('click', () => addParcelTab());
+        els.tabs.appendChild(addTab);
     }
 
     function populateSelect(select, list, labelCb) {
@@ -90,6 +110,12 @@
                 updateArea(layers[0].getLatLngs());
             }
         });
+
+        renderActiveParcelGeometry();
+    }
+
+    function getActiveParcel() {
+        return state.parcels[state.activeParcelIndex];
     }
 
     function polygonAreaHa(latlngs) {
@@ -100,10 +126,38 @@
         return area / 10000;
     }
 
+    function serializePolygon(latlngs) {
+        if (!latlngs || !latlngs[0]) return [];
+        return latlngs[0].map(point => [point.lat, point.lng]);
+    }
+
+    function restorePolygon(coords) {
+        if (!coords || !coords.length) return null;
+        return L.polygon(coords);
+    }
+
     function updateArea(latlngs) {
         const ha = polygonAreaHa(latlngs);
-        state.fieldAreaHa = parseFloat(ha.toFixed(4));
-        els.area.value = state.fieldAreaHa;
+        const parcel = getActiveParcel();
+        parcel.fieldAreaHa = parseFloat(ha.toFixed(4));
+        parcel.polygon = serializePolygon(latlngs);
+        els.area.value = parcel.fieldAreaHa;
+    }
+
+    function renderActiveParcelGeometry() {
+        const parcel = getActiveParcel();
+        if (!parcel || !drawnItems) return;
+        drawnItems.clearLayers();
+        if (parcel.polygon && parcel.polygon.length) {
+            const shape = restorePolygon(parcel.polygon);
+            if (shape) {
+                drawnItems.addLayer(shape);
+                map.fitBounds(shape.getBounds());
+                updateArea(shape.getLatLngs());
+                return;
+            }
+        }
+        els.area.value = parcel.fieldAreaHa || '';
     }
 
     function ensureOperationRow() {
@@ -112,7 +166,7 @@
         }
     }
 
-    function addOperationRow() {
+    function addOperationRow(savedOp = null) {
         const row = document.createElement('div');
         row.className = 'agro-operation-row';
         row.innerHTML = `
@@ -143,6 +197,15 @@
             ensureOperationRow();
         });
         onMainGroupChange(row);
+        if (savedOp) {
+            const opDef = operations.find(o => o.operation_id === savedOp.operation_id);
+            if (opDef) {
+                row.querySelector('.op-main').value = opDef.main_group;
+                onMainGroupChange(row);
+                row.querySelector('.op-select').value = savedOp.operation_id;
+                onOperationChange(row, savedOp);
+            }
+        }
     }
 
     function populateMainGroup(row) {
@@ -174,7 +237,7 @@
         row.querySelector('.op-extra').innerHTML = '';
     }
 
-    function onOperationChange(row) {
+    function onOperationChange(row, savedOp = null) {
         const opId = row.querySelector('.op-select').value;
         const op = operations.find(o => o.operation_id === opId);
         const summary = row.querySelector('.op-summary');
@@ -218,6 +281,9 @@
                 input.name = f.key;
                 if (f.step) input.step = f.step;
                 if (f.min) input.min = f.min;
+                if (savedOp && typeof savedOp[f.key] !== 'undefined') {
+                    input.value = savedOp[f.key];
+                }
                 label.appendChild(input);
                 grid.appendChild(label);
             });
@@ -225,34 +291,19 @@
         }
     }
 
-    function validateStep1() {
-        const crop = els.crop.value;
-        const tractor = els.tractor.value;
-        const fuelId = els.fuel.value;
-        if (!crop || !tractor || !fuelId || state.fieldAreaHa <= 0) {
-            alert('Molimo popunite kulturu, traktor, gorivo i nacrtajte parcelu.');
-            return false;
-        }
-        state.selectedCrop = crops.find(c => c.crop_id === crop);
-        state.selectedTractor = tractors.find(t => t.tractor_id === tractor);
-        state.selectedFuel = fuels.find(f => f.fuel_id === fuelId);
-        state.fuelPrice = state.selectedFuel ? parseFloat(state.selectedFuel.price_per_liter) : 0;
-        return true;
-    }
-
     function parseNumber(val) {
         const num = parseFloat(val);
         return isNaN(num) ? 0 : num;
     }
 
-    function gatherOperations() {
+    function gatherOperationsData() {
         const rows = Array.from(els.operationsWrap.querySelectorAll('.agro-operation-row'));
         const result = [];
         rows.forEach(row => {
             const opId = row.querySelector('.op-select').value;
             const op = operations.find(o => o.operation_id === opId);
             if (!op) return;
-            const payload = { ...op };
+            const payload = { operation_id: opId };
             payload.hours = parseNumber(row.querySelector('input[name="hours"]')?.value);
             payload.utrosena_kolicina_prihrane = parseNumber(row.querySelector('input[name="utrosena_kolicina_prihrane"]')?.value);
             payload.cena_prihrane_kg = parseNumber(row.querySelector('input[name="cena_prihrane_kg"]')?.value);
@@ -269,42 +320,87 @@
         return result;
     }
 
-    function calculateParcel(yieldPerHa, pricePerKg) {
-        const ops = gatherOperations();
+    function syncParcelFromInputs() {
+        const parcel = getActiveParcel();
+        if (!parcel) return;
+        parcel.cropId = els.crop.value;
+        parcel.tractorId = els.tractor.value;
+        parcel.fuelId = els.fuel.value;
+        const selectedFuel = fuels.find(f => f.fuel_id === parcel.fuelId);
+        parcel.fuelPrice = selectedFuel ? parseNumber(selectedFuel.price_per_liter) : 0;
+        parcel.fieldAreaHa = parseNumber(els.area.value);
+        parcel.operations = gatherOperationsData();
+        parcel.yieldPerHa = parseNumber(document.getElementById('agro-yield-per-ha').value);
+        parcel.pricePerKg = parseNumber(document.getElementById('agro-price-per-kg').value);
+    }
+
+    function loadParcelToForm(parcel) {
+        if (!parcel) return;
+        els.crop.value = parcel.cropId || '';
+        els.tractor.value = parcel.tractorId || '';
+        els.fuel.value = parcel.fuelId || '';
+        els.area.value = parcel.fieldAreaHa || '';
+        const yieldInput = document.getElementById('agro-yield-per-ha');
+        const priceInput = document.getElementById('agro-price-per-kg');
+        yieldInput.value = parcel.yieldPerHa || '';
+        priceInput.value = parcel.pricePerKg || '';
+        els.operationsWrap.innerHTML = '';
+        if (parcel.operations.length) {
+            parcel.operations.forEach(op => addOperationRow(op));
+        } else {
+            ensureOperationRow();
+        }
+        renderActiveParcelGeometry();
+    }
+
+    function validateActiveParcel() {
+        const parcel = getActiveParcel();
+        if (!parcel) return false;
+        if (!parcel.cropId || !parcel.tractorId || !parcel.fuelId || parcel.fieldAreaHa <= 0) {
+            alert('Molimo popunite kulturu, traktor, gorivo i nacrtajte parcelu.');
+            return false;
+        }
+        return true;
+    }
+
+    function calculateParcel(parcel) {
+        const ops = parcel.operations || [];
         let totalHa = 0, totalCas = 0, totalPrihrana = 0, totalZastita = 0, totalSemena = 0, totalBaliranje = 0;
         const opDetails = [];
-        ops.forEach(op => {
+        ops.forEach(saved => {
+            const op = operations.find(o => o.operation_id === saved.operation_id);
+            if (!op) return;
             let fuelCost = 0;
             let priceCost = 0;
             let total = 0;
             if (op.unit === 'ha') {
-                fuelCost = state.fieldAreaHa * op.fuel_l_per_unit * state.fuelPrice;
-                priceCost = state.fieldAreaHa * op.price_per_unit;
+                fuelCost = parcel.fieldAreaHa * op.fuel_l_per_unit * parcel.fuelPrice;
+                priceCost = parcel.fieldAreaHa * op.price_per_unit;
                 total = fuelCost + priceCost;
                 totalHa += total;
             } else if (op.unit === 'čas') {
-                fuelCost = op.hours * op.fuel_l_per_unit * state.fuelPrice;
-                priceCost = op.hours * op.price_per_unit;
+                fuelCost = saved.hours * op.fuel_l_per_unit * parcel.fuelPrice;
+                priceCost = saved.hours * op.price_per_unit;
                 total = fuelCost + priceCost;
                 totalCas += total;
             } else if (op.main_group === 'Žetva i berba' && op.sub_group === 'Baliranje') {
                 fuelCost = 0;
-                priceCost = op.kolicina_bala * op.price_per_unit;
+                priceCost = saved.kolicina_bala * op.price_per_unit;
                 total = priceCost;
                 totalBaliranje += total;
             }
             if (op.main_group === 'Nega useva' && op.sub_group === 'Prihrana') {
-                const fert = state.fieldAreaHa * op.utrosena_kolicina_prihrane * op.cena_prihrane_kg;
+                const fert = parcel.fieldAreaHa * saved.utrosena_kolicina_prihrane * saved.cena_prihrane_kg;
                 totalPrihrana += fert;
                 total += fert;
             }
             if (op.main_group === 'Nega useva' && op.sub_group === 'Zaštita') {
-                const protect = state.fieldAreaHa * op.utrosena_kolicina_zastite * op.cena_zastite_litra;
+                const protect = parcel.fieldAreaHa * saved.utrosena_kolicina_zastite * saved.cena_zastite_litra;
                 totalZastita += protect;
                 total += protect;
             }
             if (op.main_group === 'Setva i sadnja') {
-                const seeds = state.fieldAreaHa * op.utrosena_kolicina_semena * op.cena_semena_kg;
+                const seeds = parcel.fieldAreaHa * saved.utrosena_kolicina_semena * saved.cena_semena_kg;
                 totalSemena += seeds;
                 total += seeds;
             }
@@ -317,7 +413,7 @@
             });
         });
         const totalCost = totalHa + totalCas + totalPrihrana + totalZastita + totalSemena + totalBaliranje;
-        const revenue = state.fieldAreaHa * yieldPerHa * pricePerKg;
+        const revenue = parcel.fieldAreaHa * parcel.yieldPerHa * parcel.pricePerKg;
         const profit = revenue - totalCost;
         return {
             operations: opDetails,
@@ -333,8 +429,29 @@
         };
     }
 
+    function getCropName(id) {
+        return (crops.find(c => c.crop_id === id) || {}).name || '';
+    }
+
+    function getTractorLabel(id) {
+        const tr = tractors.find(t => t.tractor_id === id);
+        if (!tr) return '';
+        return `${tr.name}${tr.power_hp_label ? ' (' + tr.power_hp_label + ')' : ''}`;
+    }
+
+    function getFuelLabel(id) {
+        const fuel = fuels.find(f => f.fuel_id === id);
+        if (!fuel) return '';
+        return `${fuel.name} (${fuel.price_per_liter} din/l)`;
+    }
+
+    function getFuelData(id) {
+        return fuels.find(f => f.fuel_id === id) || null;
+    }
+
     function renderResults() {
-        if (!state.parcels.length) {
+        const validParcels = state.parcels.filter(p => p.result);
+        if (!validParcels.length) {
             els.results.innerHTML = '<p>Nema sačuvanih parcela.</p>';
             els.pdf.disabled = true;
             return;
@@ -342,82 +459,105 @@
         els.pdf.disabled = false;
         let html = '';
         let totals = { cost: 0, revenue: 0, profit: 0, ha: 0, cas: 0, prihrana: 0, zastita: 0, semena: 0, baliranje: 0 };
-        state.parcels.forEach((p, idx) => {
-            totals.cost += p.total_cost;
-            totals.revenue += p.revenue;
-            totals.profit += p.profit;
-            totals.ha += p.total_trosak_ha;
-            totals.cas += p.total_trosak_cas;
-            totals.prihrana += p.total_trosak_prihrane;
-            totals.zastita += p.total_trosak_zastite;
-            totals.semena += p.total_trosak_semena;
-            totals.baliranje += p.total_trosak_baliranja;
+        validParcels.forEach((p, idx) => {
+            totals.cost += p.result.total_cost;
+            totals.revenue += p.result.revenue;
+            totals.profit += p.result.profit;
+            totals.ha += p.result.total_trosak_ha;
+            totals.cas += p.result.total_trosak_cas;
+            totals.prihrana += p.result.total_trosak_prihrane;
+            totals.zastita += p.result.total_trosak_zastite;
+            totals.semena += p.result.total_trosak_semena;
+            totals.baliranje += p.result.total_trosak_baliranja;
             html += `<div class="agro-card">`;
-            html += `<h4>Parcela ${idx + 1} – ${p.crop_name} (${p.area} ha)</h4>`;
-            html += `<p>Traktor: ${p.tractor_name}${p.tractor_hp ? ' (' + p.tractor_hp + ')' : ''} | Gorivo: ${p.fuel_name} (${p.fuel_price} din/l)</p>`;
+            html += `<h4>Parcela ${idx + 1} – ${getCropName(p.cropId)} (${p.fieldAreaHa} ha)</h4>`;
+            html += `<p>Traktor: ${getTractorLabel(p.tractorId)} | Gorivo: ${getFuelLabel(p.fuelId)}</p>`;
             html += `<table class="agro-summary-table"><thead><tr><th>Operacija</th><th>J.m.</th><th>Gorivo</th><th>Cena</th><th>Ukupno</th></tr></thead><tbody>`;
-            p.operations.forEach(op => {
+            p.result.operations.forEach(op => {
                 html += `<tr><td>${op.name}</td><td>${op.unit}</td><td>${op.fuel_cost}</td><td>${op.price_cost}</td><td>${op.total}</td></tr>`;
             });
             html += `</tbody></table>`;
-            html += `<p>Troškovi ha: ${formatCurrency(p.total_trosak_ha)} | Čas: ${formatCurrency(p.total_trosak_cas)} | Prihrana: ${formatCurrency(p.total_trosak_prihrane)} | Zaštita: ${formatCurrency(p.total_trosak_zastite)} | Seme: ${formatCurrency(p.total_trosak_semena)} | Baliranje: ${formatCurrency(p.total_trosak_baliranja)}</p>`;
-            html += `<p>Ukupan trošak: <strong>${formatCurrency(p.total_cost)}</strong></p>`;
-            html += `<p>Prinos: <strong>${formatCurrency(p.revenue)}</strong> | Agrotehnička dobit: <strong>${formatCurrency(p.profit)}</strong></p>`;
+            html += `<p>Troškovi ha: ${formatCurrency(p.result.total_trosak_ha)} | Čas: ${formatCurrency(p.result.total_trosak_cas)} | Prihrana: ${formatCurrency(p.result.total_trosak_prihrane)} | Zaštita: ${formatCurrency(p.result.total_trosak_zastite)} | Seme: ${formatCurrency(p.result.total_trosak_semena)} | Baliranje: ${formatCurrency(p.result.total_trosak_baliranja)}</p>`;
+            html += `<p>Ukupan trošak: <strong>${formatCurrency(p.result.total_cost)}</strong></p>`;
+            html += `<p>Prinos: <strong>${formatCurrency(p.result.revenue)}</strong> | Agrotehnička dobit: <strong>${formatCurrency(p.result.profit)}</strong></p>`;
             html += `</div>`;
         });
         html += `<div class="agro-card">`;
-        html += `<h4>Zbirno (${state.parcels.length} parcela)</h4>`;
+        html += `<h4>Zbirno (${validParcels.length} parcela)</h4>`;
         html += `<p>Troškovi ha: ${formatCurrency(totals.ha)} | Čas: ${formatCurrency(totals.cas)} | Prihrana: ${formatCurrency(totals.prihrana)} | Zaštita: ${formatCurrency(totals.zastita)} | Seme: ${formatCurrency(totals.semena)} | Baliranje: ${formatCurrency(totals.baliranje)}</p>`;
         html += `<p>Ukupni troškovi: <strong>${formatCurrency(totals.cost)}</strong></p>`;
         html += `<p>Ukupan prinos: <strong>${formatCurrency(totals.revenue)}</strong> | Ukupna agrotehnička dobit: <strong>${formatCurrency(totals.profit)}</strong></p>`;
         html += `</div>`;
         els.results.innerHTML = html;
-        els.pdf.dataset.payload = JSON.stringify({ parcels: state.parcels, totals: { total_cost: totals.cost, revenue: totals.revenue, profit: totals.profit } });
+        const pdfParcels = validParcels.map(p => {
+            const fuel = getFuelData(p.fuelId) || {};
+            return {
+                crop_name: getCropName(p.cropId),
+                area: p.fieldAreaHa,
+                tractor_name: getTractorLabel(p.tractorId),
+                fuel_name: fuel.name || '',
+                fuel_price: fuel.price_per_liter || 0,
+                operations: p.result.operations,
+                total_trosak_ha: p.result.total_trosak_ha,
+                total_trosak_cas: p.result.total_trosak_cas,
+                total_trosak_prihrane: p.result.total_trosak_prihrane,
+                total_trosak_zastite: p.result.total_trosak_zastite,
+                total_trosak_semena: p.result.total_trosak_semena,
+                total_trosak_baliranja: p.result.total_trosak_baliranja,
+                total_cost: p.result.total_cost,
+                revenue: p.result.revenue,
+                profit: p.result.profit,
+            };
+        });
+        els.pdf.dataset.payload = JSON.stringify({ parcels: pdfParcels, totals: { total_cost: totals.cost, revenue: totals.revenue, profit: totals.profit } });
     }
 
-    function resetForm() {
-        state.fieldAreaHa = 0;
-        state.operations = [];
-        els.area.value = '';
-        els.crop.value = '';
-        els.tractor.value = '';
-        els.fuel.value = '';
-        els.operationsWrap.innerHTML = '';
-        ensureOperationRow();
-        if (drawnItems) {
-            drawnItems.clearLayers();
-        }
-        document.getElementById('agro-yield-per-ha').value = '';
-        document.getElementById('agro-price-per-kg').value = '';
-    }
-
-    function addParcel() {
-        if (!validateStep1()) return;
-        const yieldPerHa = parseNumber(document.getElementById('agro-yield-per-ha').value);
-        const pricePerKg = parseNumber(document.getElementById('agro-price-per-kg').value);
-        const result = calculateParcel(yieldPerHa, pricePerKg);
-        const parcel = {
-            crop_name: state.selectedCrop.name,
-            tractor_name: state.selectedTractor.name,
-            tractor_hp: state.selectedTractor.power_hp_label,
-            fuel_name: state.selectedFuel.name,
-            fuel_price: state.fuelPrice,
-            area: state.fieldAreaHa,
-            operations: result.operations,
-            total_trosak_ha: result.total_trosak_ha,
-            total_trosak_cas: result.total_trosak_cas,
-            total_trosak_prihrane: result.total_trosak_prihrane,
-            total_trosak_zastite: result.total_trosak_zastite,
-            total_trosak_semena: result.total_trosak_semena,
-            total_trosak_baliranja: result.total_trosak_baliranja,
-            total_cost: result.total_cost,
-            revenue: result.revenue,
-            profit: result.profit,
-        };
-        state.parcels.push(parcel);
+    function saveActiveParcel() {
+        syncParcelFromInputs();
+        if (!validateActiveParcel()) return;
+        const parcel = getActiveParcel();
+        parcel.result = calculateParcel(parcel);
         renderResults();
-        switchStep(4);
-        resetForm();
+    }
+
+    function calculateAllParcels() {
+        syncParcelFromInputs();
+        let hasResult = false;
+        state.parcels.forEach(parcel => {
+            if (parcel.cropId && parcel.tractorId && parcel.fuelId && parcel.fieldAreaHa > 0) {
+                parcel.result = calculateParcel(parcel);
+                hasResult = true;
+            }
+        });
+        if (!hasResult) {
+            alert('Molimo popunite barem jednu parcelu.');
+            return;
+        }
+        renderResults();
+    }
+
+    function switchParcel(index) {
+        syncParcelFromInputs();
+        state.activeParcelIndex = index;
+        renderTabs();
+        loadParcelToForm(getActiveParcel());
+    }
+
+    function addParcelTab() {
+        syncParcelFromInputs();
+        state.parcels.push(createEmptyParcel());
+        state.activeParcelIndex = state.parcels.length - 1;
+        renderTabs();
+        loadParcelToForm(getActiveParcel());
+    }
+
+    function resetAll() {
+        state.parcels = [createEmptyParcel()];
+        state.activeParcelIndex = 0;
+        renderTabs();
+        loadParcelToForm(getActiveParcel());
+        els.results.innerHTML = '';
+        els.pdf.disabled = true;
     }
 
     function sendPdf() {
@@ -443,40 +583,39 @@
     }
 
     function initEvents() {
-        document.getElementById('agro-step1-next').addEventListener('click', () => {
-            if (validateStep1()) {
-                switchStep(2);
-            }
-        });
-        document.getElementById('agro-step2-prev').addEventListener('click', () => switchStep(1));
-        document.getElementById('agro-step2-next').addEventListener('click', () => switchStep(3));
-        document.getElementById('agro-step3-prev').addEventListener('click', () => switchStep(2));
         els.addOperation.addEventListener('click', (e) => {
             e.preventDefault();
             addOperationRow();
         });
-        els.addParcel.addEventListener('click', (e) => {
+        els.saveParcel.addEventListener('click', (e) => {
             e.preventDefault();
-            addParcel();
+            saveActiveParcel();
+        });
+        els.calculate.addEventListener('click', (e) => {
+            e.preventDefault();
+            calculateAllParcels();
         });
         els.reset.addEventListener('click', (e) => {
             e.preventDefault();
-            state.parcels = [];
-            els.results.innerHTML = '';
-            resetForm();
-            switchStep(1);
-            els.pdf.disabled = true;
+            resetAll();
         });
         els.pdf.addEventListener('click', (e) => {
             e.preventDefault();
             sendPdf();
         });
+        [els.crop, els.tractor, els.fuel, document.getElementById('agro-yield-per-ha'), document.getElementById('agro-price-per-kg')]
+            .forEach(input => {
+                input.addEventListener('change', () => syncParcelFromInputs());
+            });
     }
 
     document.addEventListener('DOMContentLoaded', () => {
         initSelects();
+        state.parcels.push(createEmptyParcel());
+        renderTabs();
         initMap();
         ensureOperationRow();
+        loadParcelToForm(getActiveParcel());
         initEvents();
     });
 })();
