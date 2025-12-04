@@ -877,8 +877,11 @@ class AgroKalkulator
         check_ajax_referer(self::NONCE_ACTION, 'nonce');
         $payload = isset($_POST['data']) ? wp_unslash($_POST['data']) : '';
         $data = json_decode($payload, true);
-        if (!$data || !class_exists('FPDF')) {
+        if (!class_exists('FPDF')) {
             require_once __DIR__ . '/includes/fpdf.php';
+        }
+        if (!$data) {
+            wp_send_json_error('Invalid data payload');
         }
         if (!class_exists('FPDF')) {
             wp_send_json_error('FPDF not found');
@@ -926,8 +929,17 @@ class AgroKalkulator
         $pdf->Cell(0, 8, 'Ukupni troškovi: ' . $this->format_money($data['totals']['total_cost']), 0, 1);
         $pdf->Cell(0, 8, 'Ukupan prinos: ' . $this->format_money($data['totals']['revenue']), 0, 1);
         $pdf->Cell(0, 8, 'Ukupna agrotehnička dobit: ' . $this->format_money($data['totals']['profit']), 0, 1);
-        $pdf->Output('D', 'agro-kalkulator.pdf');
-        wp_die();
+        $output = $pdf->Output('S');
+
+        while (ob_get_level()) {
+            ob_end_clean();
+        }
+
+        header('Content-Type: application/pdf');
+        header('Content-Disposition: attachment; filename="agro-kalkulator.pdf"');
+        header('Content-Length: ' . strlen($output));
+        echo $output;
+        exit;
     }
 }
 
