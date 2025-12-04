@@ -28,6 +28,7 @@ class AgroKalkulator
         add_action('admin_post_agro_delete_operation', [$this, 'handle_delete_operation']);
         add_action('admin_post_agro_save_crop', [$this, 'handle_save_crop']);
         add_action('admin_post_agro_delete_crop', [$this, 'handle_delete_crop']);
+        add_action('admin_post_agro_import_data', [$this, 'handle_import_data']);
         add_action('wp_ajax_agro_generate_pdf', [$this, 'handle_generate_pdf']);
         add_action('wp_ajax_nopriv_agro_generate_pdf', [$this, 'handle_generate_pdf']);
         register_activation_hook(__FILE__, [$this, 'activate']);
@@ -309,6 +310,7 @@ class AgroKalkulator
         add_submenu_page('agro-kalkulator', 'Traktori', 'Traktori', 'manage_options', 'agro-tractors', [$this, 'render_tractor_page']);
         add_submenu_page('agro-kalkulator', 'Operacije', 'Operacije', 'manage_options', 'agro-operations', [$this, 'render_operation_page']);
         add_submenu_page('agro-kalkulator', 'Kulture', 'Kulture', 'manage_options', 'agro-crops', [$this, 'render_crop_page']);
+        add_submenu_page('agro-kalkulator', 'Uvoz podataka', 'Uvoz podataka', 'manage_options', 'agro-import', [$this, 'render_import_page']);
     }
 
     private function admin_table_header(array $headers)
@@ -526,9 +528,83 @@ class AgroKalkulator
         <?php
     }
 
+    public function render_import_page()
+    {
+        if (!current_user_can('manage_options')) {
+            return;
+        }
+        $imported = isset($_GET['imported']) ? sanitize_text_field(wp_unslash($_GET['imported'])) : '';
+        $fuels_count = isset($_GET['fuels']) ? intval($_GET['fuels']) : 0;
+        $tractors_count = isset($_GET['tractors']) ? intval($_GET['tractors']) : 0;
+        $operations_count = isset($_GET['operations']) ? intval($_GET['operations']) : 0;
+        ?>
+        <div class="wrap">
+            <h1>Uvoz podataka</h1>
+            <?php if ($imported) : ?>
+                <div class="notice notice-success"><p>Uvezeno <?php echo esc_html($fuels_count); ?> goriva, <?php echo esc_html($tractors_count); ?> traktora, <?php echo esc_html($operations_count); ?> operacija.</p></div>
+            <?php endif; ?>
+            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" enctype="multipart/form-data">
+                <?php wp_nonce_field(self::NONCE_ACTION); ?>
+                <input type="hidden" name="action" value="agro_import_data">
+                <table class="form-table">
+                    <tr>
+                        <th scope="row">CSV goriva</th>
+                        <td><input type="file" name="fuels_csv" accept=".csv"></td>
+                    </tr>
+                    <tr>
+                        <th scope="row">CSV traktori</th>
+                        <td><input type="file" name="tractors_csv" accept=".csv"></td>
+                    </tr>
+                    <tr>
+                        <th scope="row">CSV operacije</th>
+                        <td><input type="file" name="operations_csv" accept=".csv"></td>
+                    </tr>
+                </table>
+                <?php submit_button('Uvezi podatke'); ?>
+            </form>
+        </div>
+        <?php
+    }
+
     private function sanitize_boolean_checkbox($value)
     {
         return $value ? 1 : 0;
+    }
+
+    private function parse_csv_rows($file)
+    {
+        $rows = [];
+        if (empty($file['tmp_name']) || !is_uploaded_file($file['tmp_name'])) {
+            return $rows;
+        }
+        $handle = fopen($file['tmp_name'], 'r');
+        if (!$handle) {
+            return $rows;
+        }
+        $first_line = fgets($handle);
+        if ($first_line === false) {
+            fclose($handle);
+            return $rows;
+        }
+        $delimiter = substr_count($first_line, ';') > substr_count($first_line, ',') ? ';' : ',';
+        $headers = array_map('trim', str_getcsv($first_line, $delimiter));
+        while (($data = fgetcsv($handle, 0, $delimiter)) !== false) {
+            if (!array_filter($data, 'strlen')) {
+                continue;
+            }
+            $row = [];
+            foreach ($headers as $index => $column) {
+                $row[$column] = isset($data[$index]) ? trim($data[$index]) : '';
+            }
+            $rows[] = $row;
+        }
+        fclose($handle);
+        return $rows;
+    }
+
+    private function parse_float_value($value)
+    {
+        return floatval(str_replace(',', '.', $value));
     }
 
     private function handle_option_save($option, $id_key, $data)
@@ -663,6 +739,111 @@ class AgroKalkulator
             'name' => $name,
         ];
         $this->handle_option_save('agro_crops', 'crop_id', $crops);
+    }
+
+    public function handle_import_data()
+    {
+        $this->require_capability();
+        check_admin_referer(self::NONCE_ACTION);
+
+        $import_counts = [
+            'fuels' => 0,
+            'tractors' => 0,
+            'operations' => 0,
+        ];
+
+        if (!empty($_FILES['fuels_csv']['tmp_name'])) {
+            $import_counts['fuels'] = $this->import_fuels_from_csv($_FILES['fuels_csv']);
+        }
+        if (!empty($_FILES['tractors_csv']['tmp_name'])) {
+            $import_counts['tractors'] = $this->import_tractors_from_csv($_FILES['tractors_csv']);
+        }
+        if (!empty($_FILES['operations_csv']['tmp_name'])) {
+            $import_counts['operations'] = $this->import_operations_from_csv($_FILES['operations_csv']);
+        }
+
+        $redirect = add_query_arg([
+            'imported' => 'true',
+            'fuels' => $import_counts['fuels'],
+            'tractors' => $import_counts['tractors'],
+            'operations' => $import_counts['operations'],
+        ], admin_url('admin.php?page=agro-import'));
+        wp_safe_redirect($redirect);
+        exit;
+    }
+
+    private function import_fuels_from_csv($file)
+    {
+        $rows = $this->parse_csv_rows($file);
+        $fuels = [];
+        foreach ($rows as $row) {
+            $fuel_id = sanitize_key($row['energent_id'] ?? '');
+            if (!$fuel_id) {
+                continue;
+            }
+            $fuels[$fuel_id] = [
+                'fuel_id' => $fuel_id,
+                'name' => sanitize_text_field($row['naziv'] ?? ''),
+                'unit' => sanitize_text_field($row['jedinica'] ?? ''),
+                'price_per_liter' => isset($row['cena_din_po_l']) ? $this->parse_float_value($row['cena_din_po_l']) : 0,
+                'active' => isset($row['aktivan']) ? (int)$row['aktivan'] : 0,
+            ];
+        }
+        if ($fuels) {
+            update_option('agro_fuels', $fuels);
+        }
+        return count($fuels);
+    }
+
+    private function import_tractors_from_csv($file)
+    {
+        $rows = $this->parse_csv_rows($file);
+        $tractors = [];
+        foreach ($rows as $row) {
+            $tractor_id = sanitize_key($row['id'] ?? '');
+            if (!$tractor_id) {
+                continue;
+            }
+            $tractors[$tractor_id] = [
+                'tractor_id' => $tractor_id,
+                'name' => sanitize_text_field($row['naziv'] ?? ''),
+                'power_kw_from' => isset($row['snaga_kw_od']) && $row['snaga_kw_od'] !== '' ? $this->parse_float_value($row['snaga_kw_od']) : null,
+                'power_kw_to' => isset($row['snaga_kw_do']) && $row['snaga_kw_do'] !== '' ? $this->parse_float_value($row['snaga_kw_do']) : null,
+                'power_hp_label' => sanitize_text_field($row['snaga_ks_tekst'] ?? ''),
+                'unit' => sanitize_text_field($row['jm'] ?? ''),
+                'fuel_l_per_unit' => isset($row['potrosnja_l_po_jm']) ? $this->parse_float_value($row['potrosnja_l_po_jm']) : 0,
+                'price_per_unit' => isset($row['cena_din_po_jm']) ? $this->parse_float_value($row['cena_din_po_jm']) : 0,
+            ];
+        }
+        if ($tractors) {
+            update_option('agro_tractors', $tractors);
+        }
+        return count($tractors);
+    }
+
+    private function import_operations_from_csv($file)
+    {
+        $rows = $this->parse_csv_rows($file);
+        $operations = [];
+        foreach ($rows as $row) {
+            $operation_id = sanitize_key($row['id'] ?? '');
+            if (!$operation_id) {
+                continue;
+            }
+            $operations[$operation_id] = [
+                'operation_id' => $operation_id,
+                'main_group' => sanitize_text_field($row['glavna_grupa'] ?? ''),
+                'sub_group' => sanitize_text_field($row['potgrupa'] ?? ''),
+                'name' => sanitize_text_field($row['naziv'] ?? ''),
+                'unit' => sanitize_text_field($row['jm'] ?? ''),
+                'fuel_l_per_unit' => isset($row['potrosnja_l_po_jm']) ? $this->parse_float_value($row['potrosnja_l_po_jm']) : 0,
+                'price_per_unit' => isset($row['cena_din_po_jm']) ? $this->parse_float_value($row['cena_din_po_jm']) : 0,
+            ];
+        }
+        if ($operations) {
+            update_option('agro_operations', $operations);
+        }
+        return count($operations);
     }
 
     public function handle_delete_crop()
