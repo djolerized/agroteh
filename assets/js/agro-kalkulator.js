@@ -3,6 +3,8 @@
     const state = {
         parcels: [],
         activeParcelIndex: 0,
+        currency: 'RSD',
+        eurRate: data.eurRate || 117,
     };
 
     function createEmptyParcel() {
@@ -12,6 +14,8 @@
             fuelId: '',
             fuelPrice: 0,
             fieldAreaHa: 0,
+            manualAreaHa: 0,
+            areaMode: 'map',
             polygon: [],
             operations: [],
             yieldPerHa: 0,
@@ -38,6 +42,7 @@
         tractor: document.getElementById('agro-tractor'),
         fuel: document.getElementById('agro-fuel'),
         area: document.getElementById('agro-area'),
+        areaModeRadios: document.querySelectorAll('input[name="agro-area-mode"]'),
         operationsWrap: document.getElementById('agro-operations'),
         addOperation: document.getElementById('agro-add-operation'),
         saveParcel: document.getElementById('agro-save-parcel'),
@@ -45,10 +50,23 @@
         results: document.getElementById('agro-results'),
         reset: document.getElementById('agro-reset'),
         pdf: document.getElementById('agro-generate-pdf'),
+        currencyRadios: document.querySelectorAll('input[name="agro-currency"]'),
     };
 
-    function formatCurrency(value) {
+    function formatNumber(value) {
         return new Intl.NumberFormat('sr-RS', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value || 0);
+    }
+
+    function formatCurrency(value) {
+        let amount = value || 0;
+        if (state.currency === 'EUR' && state.eurRate > 0) {
+            amount = amount / state.eurRate;
+        }
+        return `${formatNumber(amount)} ${state.currency}`;
+    }
+
+    function formatCurrencyRsd(value) {
+        return `${formatNumber(value)} RSD`;
     }
 
     function renderTabs() {
@@ -140,17 +158,54 @@
         return L.polygon(coords);
     }
 
+    function getSelectedAreaMode() {
+        const checked = document.querySelector('input[name="agro-area-mode"]:checked');
+        return checked ? checked.value : 'map';
+    }
+
+    function applyAreaModeUI(mode) {
+        const mapEl = document.getElementById('agro-map');
+        if (mode === 'manual') {
+            if (els.area) {
+                els.area.removeAttribute('readonly');
+            }
+            if (mapEl) {
+                mapEl.style.display = 'none';
+            }
+        } else {
+            if (els.area) {
+                els.area.setAttribute('readonly', 'readonly');
+            }
+            if (mapEl) {
+                mapEl.style.display = 'block';
+                if (map) {
+                    setTimeout(() => map.invalidateSize(), 50);
+                }
+            }
+        }
+    }
+
+    function setAreaDisplayValue(value) {
+        if (els.area) {
+            els.area.value = value || '';
+        }
+    }
+
     function updateArea(latlngs) {
         const ha = polygonAreaHa(latlngs);
         const parcel = getActiveParcel();
+        if (!parcel || parcel.areaMode !== 'map') {
+            return;
+        }
         parcel.fieldAreaHa = parseFloat(ha.toFixed(4));
         parcel.polygon = serializePolygon(latlngs);
-        els.area.value = parcel.fieldAreaHa;
+        setAreaDisplayValue(parcel.fieldAreaHa);
     }
 
     function renderActiveParcelGeometry() {
         const parcel = getActiveParcel();
         if (!parcel || !drawnItems) return;
+        applyAreaModeUI(parcel.areaMode || 'map');
         drawnItems.clearLayers();
         if (parcel.polygon && parcel.polygon.length) {
             const shape = restorePolygon(parcel.polygon);
@@ -161,7 +216,7 @@
                 return;
             }
         }
-        els.area.value = parcel.fieldAreaHa || '';
+        setAreaDisplayValue(parcel.fieldAreaHa || '');
     }
 
     function ensureOperationRow() {
@@ -290,6 +345,9 @@
         if (op.main_group === 'Žetva i berba' && op.sub_group === 'Baliranje') {
             fields.push({ key: 'kolicina_bala', label: 'Količina bala', type: 'number', step: '0.01', min: '0' });
         }
+        if (op.main_group === 'Transport') {
+            fields.push({ key: 'trailer_capacity_tons', label: 'Nosivost prikolice (t)', type: 'number', step: '0.01', min: '0.01' });
+        }
         if (fields.length) {
             const grid = document.createElement('div');
             grid.className = 'agro-grid';
@@ -335,6 +393,7 @@
             payload.cena_semena_kg = parseNumber(row.querySelector('input[name="cena_semena_kg"]')?.value);
             payload.naziv_semena = row.querySelector('input[name="naziv_semena"]')?.value || '';
             payload.kolicina_bala = parseNumber(row.querySelector('input[name="kolicina_bala"]')?.value);
+            payload.trailer_capacity_tons = parseNumber(row.querySelector('input[name="trailer_capacity_tons"]')?.value);
             result.push(payload);
         });
         return result;
@@ -348,7 +407,13 @@
         parcel.fuelId = els.fuel.value;
         const selectedFuel = fuels.find(f => f.fuel_id === parcel.fuelId);
         parcel.fuelPrice = selectedFuel ? parseNumber(selectedFuel.price_per_liter) : 0;
-        parcel.fieldAreaHa = parseNumber(els.area.value);
+        parcel.areaMode = getSelectedAreaMode();
+        if (parcel.areaMode === 'manual') {
+            parcel.manualAreaHa = parseNumber(els.area.value);
+            parcel.fieldAreaHa = parcel.manualAreaHa;
+        } else {
+            parcel.fieldAreaHa = parseNumber(els.area.value);
+        }
         parcel.operations = gatherOperationsData();
         parcel.yieldPerHa = parseNumber(document.getElementById('agro-yield-per-ha').value);
         parcel.pricePerKg = parseNumber(document.getElementById('agro-price-per-kg').value);
@@ -359,7 +424,13 @@
         els.crop.value = parcel.cropId || '';
         els.tractor.value = parcel.tractorId || '';
         els.fuel.value = parcel.fuelId || '';
-        els.area.value = parcel.fieldAreaHa || '';
+        const areaMode = parcel.areaMode || 'map';
+        const areaValue = areaMode === 'manual' ? parcel.manualAreaHa : parcel.fieldAreaHa;
+        els.area.value = areaValue || '';
+        applyAreaModeUI(areaMode);
+        els.areaModeRadios.forEach(radio => {
+            radio.checked = radio.value === areaMode;
+        });
         const yieldInput = document.getElementById('agro-yield-per-ha');
         const priceInput = document.getElementById('agro-price-per-kg');
         yieldInput.value = parcel.yieldPerHa || '';
@@ -376,8 +447,9 @@
     function validateActiveParcel() {
         const parcel = getActiveParcel();
         if (!parcel) return false;
-        if (!parcel.cropId || !parcel.tractorId || !parcel.fuelId || parcel.fieldAreaHa <= 0) {
-            alert('Molimo popunite kulturu, traktor, gorivo i nacrtajte parcelu.');
+        const areaValid = parcel.fieldAreaHa > 0;
+        if (!parcel.cropId || !parcel.tractorId || !parcel.fuelId || !areaValid) {
+            alert('Molimo popunite kulturu, traktor, gorivo i unesite površinu (ručno ili preko mape).');
             return false;
         }
         return true;
@@ -385,15 +457,29 @@
 
     function calculateParcel(parcel) {
         const ops = parcel.operations || [];
-        let totalHa = 0, totalCas = 0, totalPrihrana = 0, totalZastita = 0, totalSemena = 0, totalBaliranje = 0;
+        let totalHa = 0, totalCas = 0, totalPrihrana = 0, totalZastita = 0, totalSemena = 0, totalBaliranje = 0, totalTransport = 0;
         const opDetails = [];
+        const totalYieldKg = parcel.fieldAreaHa * parcel.yieldPerHa;
+        const totalYieldT = totalYieldKg / 1000;
         ops.forEach(saved => {
             const op = operations.find(o => o.operation_id === saved.operation_id);
             if (!op) return;
             let fuelCost = 0;
             let priceCost = 0;
             let total = 0;
-            if (op.unit === 'ha') {
+            let trips = 0;
+            let trailerCapacity = parseNumber(saved.trailer_capacity_tons);
+            let costPerTrip = 0;
+            if (op.main_group === 'Transport') {
+                if (trailerCapacity > 0 && totalYieldT > 0) {
+                    trips = Math.ceil(totalYieldT / trailerCapacity);
+                }
+                costPerTrip = (op.fuel_l_per_unit * parcel.fuelPrice) + op.price_per_unit;
+                fuelCost = trips * op.fuel_l_per_unit * parcel.fuelPrice;
+                priceCost = trips * op.price_per_unit;
+                total = trips * costPerTrip;
+                totalTransport += total;
+            } else if (op.unit === 'ha') {
                 fuelCost = parcel.fieldAreaHa * op.fuel_l_per_unit * parcel.fuelPrice;
                 priceCost = parcel.fieldAreaHa * op.price_per_unit;
                 total = fuelCost + priceCost;
@@ -427,12 +513,16 @@
             opDetails.push({
                 name: op.name,
                 unit: op.unit,
-                fuel_cost: formatCurrency(fuelCost),
-                price_cost: formatCurrency(priceCost),
-                total: formatCurrency(total),
+                fuel_cost: fuelCost,
+                price_cost: priceCost,
+                total: total,
+                is_transport: op.main_group === 'Transport',
+                trailer_capacity_tons: trailerCapacity,
+                trips: trips,
+                cost_per_trip: costPerTrip,
             });
         });
-        const totalCost = totalHa + totalCas + totalPrihrana + totalZastita + totalSemena + totalBaliranje;
+        const totalCost = totalHa + totalCas + totalPrihrana + totalZastita + totalSemena + totalBaliranje + totalTransport;
         const revenue = parcel.fieldAreaHa * parcel.yieldPerHa * parcel.pricePerKg;
         const profit = revenue - totalCost;
         return {
@@ -443,6 +533,7 @@
             total_trosak_zastite: totalZastita,
             total_trosak_semena: totalSemena,
             total_trosak_baliranja: totalBaliranje,
+            total_trosak_transporta: totalTransport,
             total_cost: totalCost,
             revenue,
             profit,
@@ -478,7 +569,7 @@
         }
         els.pdf.disabled = false;
         let html = '';
-        let totals = { cost: 0, revenue: 0, profit: 0, ha: 0, cas: 0, prihrana: 0, zastita: 0, semena: 0, baliranje: 0 };
+        let totals = { cost: 0, revenue: 0, profit: 0, ha: 0, cas: 0, prihrana: 0, zastita: 0, semena: 0, baliranje: 0, transport: 0 };
         validParcels.forEach((p, idx) => {
             totals.cost += p.result.total_cost;
             totals.revenue += p.result.revenue;
@@ -489,22 +580,28 @@
             totals.zastita += p.result.total_trosak_zastite;
             totals.semena += p.result.total_trosak_semena;
             totals.baliranje += p.result.total_trosak_baliranja;
+            totals.transport += p.result.total_trosak_transporta;
             html += `<div class="agro-card">`;
             html += `<h4>Parcela ${idx + 1} – ${getCropName(p.cropId)} (${p.fieldAreaHa} ha)</h4>`;
             html += `<p>Traktor: ${getTractorLabel(p.tractorId)} | Gorivo: ${getFuelLabel(p.fuelId)}</p>`;
-            html += `<table class="agro-summary-table"><thead><tr><th>Operacija</th><th>J.m.</th><th>Gorivo</th><th>Cena</th><th>Ukupno</th></tr></thead><tbody>`;
+            html += `<table class="agro-summary-table"><thead><tr><th>Operacija</th><th>J.m.</th><th>Detalji</th><th>Gorivo</th><th>Cena</th><th>Ukupno</th></tr></thead><tbody>`;
             p.result.operations.forEach(op => {
-                html += `<tr><td>${op.name}</td><td>${op.unit}</td><td>${op.fuel_cost}</td><td>${op.price_cost}</td><td>${op.total}</td></tr>`;
+                const transportDetails = op.is_transport ? [`Nosivost: ${op.trailer_capacity_tons || 0} t`, `Broj tura: ${op.trips || 0}`] : [];
+                if (op.is_transport && op.cost_per_trip) {
+                    transportDetails.push(`Cena po turi: ${formatCurrency(op.cost_per_trip)}`);
+                }
+                const detailCell = transportDetails.length ? transportDetails.join('<br>') : '-';
+                html += `<tr><td>${op.name}</td><td>${op.unit}</td><td>${detailCell}</td><td>${formatCurrency(op.fuel_cost)}</td><td>${formatCurrency(op.price_cost)}</td><td>${formatCurrency(op.total)}</td></tr>`;
             });
             html += `</tbody></table>`;
-            html += `<p>Troškovi ha: ${formatCurrency(p.result.total_trosak_ha)} | Čas: ${formatCurrency(p.result.total_trosak_cas)} | Prihrana: ${formatCurrency(p.result.total_trosak_prihrane)} | Zaštita: ${formatCurrency(p.result.total_trosak_zastite)} | Seme: ${formatCurrency(p.result.total_trosak_semena)} | Baliranje: ${formatCurrency(p.result.total_trosak_baliranja)}</p>`;
+            html += `<p>Troškovi ha: ${formatCurrency(p.result.total_trosak_ha)} | Čas: ${formatCurrency(p.result.total_trosak_cas)} | Prihrana: ${formatCurrency(p.result.total_trosak_prihrane)} | Zaštita: ${formatCurrency(p.result.total_trosak_zastite)} | Seme: ${formatCurrency(p.result.total_trosak_semena)} | Baliranje: ${formatCurrency(p.result.total_trosak_baliranja)} | Transport: ${formatCurrency(p.result.total_trosak_transporta)}</p>`;
             html += `<p>Ukupan trošak: <strong>${formatCurrency(p.result.total_cost)}</strong></p>`;
             html += `<p>Prinos: <strong>${formatCurrency(p.result.revenue)}</strong> | Agrotehnička dobit: <strong>${formatCurrency(p.result.profit)}</strong></p>`;
             html += `</div>`;
         });
         html += `<div class="agro-card">`;
         html += `<h4>Zbirno (${validParcels.length} parcela)</h4>`;
-        html += `<p>Troškovi ha: ${formatCurrency(totals.ha)} | Čas: ${formatCurrency(totals.cas)} | Prihrana: ${formatCurrency(totals.prihrana)} | Zaštita: ${formatCurrency(totals.zastita)} | Seme: ${formatCurrency(totals.semena)} | Baliranje: ${formatCurrency(totals.baliranje)}</p>`;
+        html += `<p>Troškovi ha: ${formatCurrency(totals.ha)} | Čas: ${formatCurrency(totals.cas)} | Prihrana: ${formatCurrency(totals.prihrana)} | Zaštita: ${formatCurrency(totals.zastita)} | Seme: ${formatCurrency(totals.semena)} | Baliranje: ${formatCurrency(totals.baliranje)} | Transport: ${formatCurrency(totals.transport)}</p>`;
         html += `<p>Ukupni troškovi: <strong>${formatCurrency(totals.cost)}</strong></p>`;
         html += `<p>Ukupan prinos: <strong>${formatCurrency(totals.revenue)}</strong> | Ukupna agrotehnička dobit: <strong>${formatCurrency(totals.profit)}</strong></p>`;
         html += `</div>`;
@@ -517,19 +614,26 @@
                 tractor_name: getTractorLabel(p.tractorId),
                 fuel_name: fuel.name || '',
                 fuel_price: fuel.price_per_liter || 0,
-                operations: p.result.operations,
+                operations: p.result.operations.map(op => ({
+                    name: op.name,
+                    unit: op.unit,
+                    fuel_cost: formatCurrencyRsd(op.fuel_cost),
+                    price_cost: formatCurrencyRsd(op.price_cost),
+                    total: formatCurrencyRsd(op.total),
+                })),
                 total_trosak_ha: p.result.total_trosak_ha,
                 total_trosak_cas: p.result.total_trosak_cas,
                 total_trosak_prihrane: p.result.total_trosak_prihrane,
                 total_trosak_zastite: p.result.total_trosak_zastite,
                 total_trosak_semena: p.result.total_trosak_semena,
                 total_trosak_baliranja: p.result.total_trosak_baliranja,
+                total_trosak_transporta: p.result.total_trosak_transporta,
                 total_cost: p.result.total_cost,
                 revenue: p.result.revenue,
                 profit: p.result.profit,
             };
         });
-        els.pdf.dataset.payload = JSON.stringify({ parcels: pdfParcels, totals: { total_cost: totals.cost, revenue: totals.revenue, profit: totals.profit } });
+        els.pdf.dataset.payload = JSON.stringify({ parcels: pdfParcels, totals: { total_cost: totals.cost, revenue: totals.revenue, profit: totals.profit, transport: totals.transport } });
     }
 
     function saveActiveParcel() {
@@ -622,6 +726,35 @@
         els.pdf.addEventListener('click', (e) => {
             e.preventDefault();
             sendPdf();
+        });
+        els.areaModeRadios.forEach(radio => {
+            radio.addEventListener('change', () => {
+                const mode = radio.value;
+                const parcel = getActiveParcel();
+                if (!parcel) return;
+                parcel.areaMode = mode;
+                applyAreaModeUI(mode);
+                if (mode === 'manual') {
+                    parcel.manualAreaHa = parseNumber(els.area.value);
+                    parcel.fieldAreaHa = parcel.manualAreaHa;
+                } else {
+                    parcel.fieldAreaHa = 0;
+                    setAreaDisplayValue('');
+                    renderActiveParcelGeometry();
+                }
+            });
+        });
+        els.area.addEventListener('input', () => {
+            const parcel = getActiveParcel();
+            if (!parcel || parcel.areaMode !== 'manual') return;
+            parcel.manualAreaHa = parseNumber(els.area.value);
+            parcel.fieldAreaHa = parcel.manualAreaHa;
+        });
+        els.currencyRadios.forEach(radio => {
+            radio.addEventListener('change', () => {
+                state.currency = radio.value;
+                renderResults();
+            });
         });
         [els.crop, els.tractor, els.fuel, document.getElementById('agro-yield-per-ha'), document.getElementById('agro-price-per-kg')]
             .forEach(input => {
