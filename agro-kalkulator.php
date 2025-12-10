@@ -29,6 +29,7 @@ class AgroKalkulator
         add_action('admin_post_agro_save_crop', [$this, 'handle_save_crop']);
         add_action('admin_post_agro_delete_crop', [$this, 'handle_delete_crop']);
         add_action('admin_post_agro_import_data', [$this, 'handle_import_data']);
+        add_action('admin_post_agro_save_settings', [$this, 'handle_save_settings']);
         add_action('wp_ajax_agro_generate_pdf', [$this, 'handle_generate_pdf']);
         add_action('wp_ajax_nopriv_agro_generate_pdf', [$this, 'handle_generate_pdf']);
         register_activation_hook(__FILE__, [$this, 'activate']);
@@ -40,6 +41,7 @@ class AgroKalkulator
         $this->maybe_seed_option('agro_tractors', $this->default_tractors());
         $this->maybe_seed_option('agro_operations', $this->default_operations());
         $this->maybe_seed_option('agro_crops', $this->default_crops());
+        $this->maybe_seed_option('agro_eur_rate', 117);
     }
 
     private function maybe_seed_option($key, $value)
@@ -210,6 +212,7 @@ class AgroKalkulator
         $tractors = get_option('agro_tractors', []);
         $operations = get_option('agro_operations', []);
         $crops = get_option('agro_crops', []);
+        $eur_rate = get_option('agro_eur_rate', 117);
 
         wp_localize_script('agro-kalkulator', 'agroKalkulatorData', [
             'ajaxUrl' => admin_url('admin-ajax.php'),
@@ -218,6 +221,7 @@ class AgroKalkulator
             'tractors' => array_values($tractors),
             'operations' => array_values($operations),
             'crops' => array_values($crops),
+            'eurRate' => (float)$eur_rate,
         ]);
     }
 
@@ -252,8 +256,15 @@ class AgroKalkulator
                             <select id="agro-fuel"></select>
                         </label>
                         <label>
+                            <span>Način unosa površine</span>
+                            <div class="agro-radio-group">
+                                <label><input type="radio" name="agro-area-mode" value="map" checked> Iscrtaj parcelu na mapi</label>
+                                <label><input type="radio" name="agro-area-mode" value="manual"> Ručni unos površine</label>
+                            </div>
+                        </label>
+                        <label>
                             <span>Površina parcele (ha)</span>
-                            <input type="text" id="agro-area" readonly>
+                            <input type="number" id="agro-area" step="0.0001" min="0" readonly>
                         </label>
                     </div>
                     <div id="agro-map" class="agro-map"></div>
@@ -290,6 +301,11 @@ class AgroKalkulator
             <div class="agro-step" data-step="4">
                 <div class="agro-card">
                     <h3>Korak 4: Rezultati</h3>
+                    <div class="agro-currency-toggle">
+                        <strong>Valuta:</strong>
+                        <label><input type="radio" name="agro-currency" value="RSD" checked> RSD</label>
+                        <label><input type="radio" name="agro-currency" value="EUR"> EUR</label>
+                    </div>
                     <div id="agro-results"></div>
                     <div class="agro-actions">
                         <button class="button" id="agro-calculate">Izračunaj</button>
@@ -311,6 +327,7 @@ class AgroKalkulator
         add_submenu_page('agro-kalkulator', 'Operacije', 'Operacije', 'manage_options', 'agro-operations', [$this, 'render_operation_page']);
         add_submenu_page('agro-kalkulator', 'Kulture', 'Kulture', 'manage_options', 'agro-crops', [$this, 'render_crop_page']);
         add_submenu_page('agro-kalkulator', 'Uvoz podataka', 'Uvoz podataka', 'manage_options', 'agro-import', [$this, 'render_import_page']);
+        add_submenu_page('agro-kalkulator', 'Opšta podešavanja', 'Opšta podešavanja', 'manage_options', 'agro-settings', [$this, 'render_settings_page']);
     }
 
     private function admin_table_header(array $headers)
@@ -566,6 +583,37 @@ class AgroKalkulator
         <?php
     }
 
+    public function render_settings_page()
+    {
+        if (!current_user_can('manage_options')) {
+            return;
+        }
+        $eur_rate = get_option('agro_eur_rate', 117);
+        $updated = isset($_GET['updated']) ? sanitize_text_field(wp_unslash($_GET['updated'])) : '';
+        ?>
+        <div class="wrap">
+            <h1>Opšta podešavanja</h1>
+            <?php if ($updated) : ?>
+                <div class="notice notice-success"><p>Podešavanja su sačuvana.</p></div>
+            <?php endif; ?>
+            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                <?php wp_nonce_field(self::NONCE_ACTION); ?>
+                <input type="hidden" name="action" value="agro_save_settings">
+                <table class="form-table">
+                    <tr>
+                        <th scope="row">Kurs za 1 EUR (u dinarima)</th>
+                        <td>
+                            <input name="agro_eur_rate" type="number" step="0.01" min="0" value="<?php echo esc_attr($eur_rate); ?>" required>
+                            <p class="description">Vrednost mora biti veća od nule.</p>
+                        </td>
+                    </tr>
+                </table>
+                <?php submit_button('Sačuvaj podešavanja'); ?>
+            </form>
+        </div>
+        <?php
+    }
+
     private function sanitize_boolean_checkbox($value)
     {
         return $value ? 1 : 0;
@@ -611,6 +659,19 @@ class AgroKalkulator
     {
         update_option($option, $data);
         wp_safe_redirect(add_query_arg(['updated' => 'true'], wp_get_referer()));
+        exit;
+    }
+
+    public function handle_save_settings()
+    {
+        $this->require_capability();
+        check_admin_referer(self::NONCE_ACTION);
+        $eur_rate = isset($_POST['agro_eur_rate']) ? floatval($_POST['agro_eur_rate']) : 0;
+        if ($eur_rate <= 0) {
+            $eur_rate = 117;
+        }
+        update_option('agro_eur_rate', $eur_rate);
+        wp_safe_redirect(add_query_arg(['updated' => 'true'], admin_url('admin.php?page=agro-settings')));
         exit;
     }
 
