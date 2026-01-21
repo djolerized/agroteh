@@ -1,127 +1,733 @@
+/* ============================================
+   Material Design Colors & Variables
+   ============================================ */
+:root {
+    --primary-color: #1976d2;
+    --primary-dark: #1565c0;
+    --primary-light: #42a5f5;
+    --secondary-color: #388e3c;
+    --secondary-dark: #2e7d32;
+    --secondary-light: #4caf50;
+    --error-color: #d32f2f;
+    --error-light: #ef5350;
+    --warning-color: #f57c00;
+    --success-color: #388e3c;
+    --surface: #ffffff;
+    --background: #f5f5f5;
+    --text-primary: rgba(0, 0, 0, 0.87);
+    --text-secondary: rgba(0, 0, 0, 0.6);
+    --text-disabled: rgba(0, 0, 0, 0.38);
+    --divider: rgba(0, 0, 0, 0.12);
+    --spacing-xs: 4px;
+    --spacing-sm: 8px;
+    --spacing-md: 16px;
+    --spacing-lg: 24px;
+    --spacing-xl: 32px;
+    --radius-sm: 4px;
+    --radius-md: 8px;
+    --radius-lg: 16px;
+    --elevation-1: 0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.24);
+    --elevation-2: 0 3px 6px rgba(0, 0, 0, 0.15), 0 2px 4px rgba(0, 0, 0, 0.12);
+    --elevation-3: 0 10px 20px rgba(0, 0, 0, 0.15), 0 3px 6px rgba(0, 0, 0, 0.10);
+    --elevation-4: 0 15px 25px rgba(0, 0, 0, 0.15), 0 5px 10px rgba(0, 0, 0, 0.05);
+    --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-normal: 250ms cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-slow: 350ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ============================================
+   Base Layout & Container
+   ============================================ */
 .agro-wrapper {
     max-width: 1200px;
-    margin: 20px auto;
-    font-family: 'Helvetica Neue', Arial, sans-serif;
+    margin: var(--spacing-lg) auto;
+    padding: 0 var(--spacing-md);
+    font-family: 'Roboto', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+    color: var(--text-primary);
+    background-color: var(--background);
 }
 
+.agro-wrapper h2 {
+    font-size: 32px;
+    font-weight: 400;
+    margin: 0 0 var(--spacing-lg) 0;
+    color: var(--text-primary);
+    letter-spacing: -0.5px;
+}
+
+.agro-wrapper h3 {
+    font-size: 24px;
+    font-weight: 500;
+    margin: 0 0 var(--spacing-md) 0;
+    color: var(--primary-color);
+    letter-spacing: 0;
+}
+
+.agro-wrapper h4 {
+    font-size: 20px;
+    font-weight: 500;
+    margin: 0 0 var(--spacing-sm) 0;
+    color: var(--text-primary);
+}
+
+/* ============================================
+   Cards with Material Design Elevation
+   ============================================ */
 .agro-card {
-    background: #fff;
-    padding: 20px;
-    border-radius: 8px;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.1);
-    margin-bottom: 20px;
+    background: var(--surface);
+    padding: var(--spacing-lg);
+    border-radius: var(--radius-md);
+    box-shadow: var(--elevation-2);
+    margin-bottom: var(--spacing-lg);
+    transition: box-shadow var(--transition-normal);
 }
 
+.agro-card:hover {
+    box-shadow: var(--elevation-3);
+}
+
+/* ============================================
+   Form Grid & Inputs
+   ============================================ */
 .agro-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-    gap: 15px;
-    margin-bottom: 15px;
+    gap: var(--spacing-md);
+    margin-bottom: var(--spacing-md);
+}
+
+.agro-grid label {
+    display: flex;
+    flex-direction: column;
 }
 
 .agro-grid label span {
     display: block;
-    margin-bottom: 4px;
-    font-weight: 600;
+    margin-bottom: var(--spacing-sm);
+    font-weight: 500;
+    font-size: 14px;
+    color: var(--text-secondary);
+    letter-spacing: 0.1px;
+    transition: color var(--transition-fast);
 }
 
+.agro-grid label:focus-within span {
+    color: var(--primary-color);
+}
+
+/* Material Design Input Styling */
 .agro-grid input,
 .agro-grid select,
 .agro-operation-row input,
 .agro-operation-row select,
 .agro-operation-row textarea {
     width: 100%;
-    padding: 8px;
-    border: 1px solid #ccc;
-    border-radius: 4px;
+    padding: 12px 16px;
+    border: 2px solid var(--divider);
+    border-radius: var(--radius-sm);
+    font-size: 16px;
+    font-family: inherit;
+    color: var(--text-primary);
+    background-color: var(--surface);
+    transition: all var(--transition-fast);
+    box-sizing: border-box;
 }
 
+.agro-grid input:hover,
+.agro-grid select:hover,
+.agro-operation-row input:hover,
+.agro-operation-row select:hover {
+    border-color: rgba(0, 0, 0, 0.24);
+}
+
+.agro-grid input:focus,
+.agro-grid select:focus,
+.agro-operation-row input:focus,
+.agro-operation-row select:focus,
+.agro-operation-row textarea:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(25, 118, 210, 0.1);
+}
+
+.agro-grid input:disabled,
+.agro-grid select:disabled,
+.agro-operation-row input:disabled,
+.agro-operation-row select:disabled {
+    background-color: rgba(0, 0, 0, 0.04);
+    color: var(--text-disabled);
+    cursor: not-allowed;
+    border-color: var(--divider);
+}
+
+.agro-grid input[readonly] {
+    background-color: rgba(0, 0, 0, 0.02);
+    cursor: default;
+}
+
+/* ============================================
+   Map Styling
+   ============================================ */
 .agro-map {
     height: 600px;
-    border-radius: 8px;
+    border-radius: var(--radius-md);
     overflow: hidden;
-    margin-bottom: 15px;
+    margin-bottom: var(--spacing-md);
+    box-shadow: var(--elevation-2);
+    transition: box-shadow var(--transition-normal);
 }
 
+.agro-map:hover {
+    box-shadow: var(--elevation-3);
+}
+
+/* ============================================
+   Radio Groups
+   ============================================ */
 .agro-radio-group {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: var(--spacing-sm);
 }
 
+.agro-radio-group label {
+    display: flex;
+    align-items: center;
+    padding: var(--spacing-sm);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: background-color var(--transition-fast);
+    font-size: 14px;
+}
+
+.agro-radio-group label:hover {
+    background-color: rgba(0, 0, 0, 0.04);
+}
+
+.agro-radio-group input[type="radio"] {
+    margin-right: var(--spacing-sm);
+    width: 20px;
+    height: 20px;
+    cursor: pointer;
+    accent-color: var(--primary-color);
+}
+
+/* ============================================
+   Buttons - Material Design
+   ============================================ */
 .agro-actions {
     display: flex;
     justify-content: flex-end;
-    gap: 10px;
+    gap: var(--spacing-md);
+    flex-wrap: wrap;
+    margin-top: var(--spacing-lg);
 }
 
+.button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 10px 24px;
+    border: none;
+    border-radius: var(--radius-sm);
+    font-size: 14px;
+    font-weight: 500;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all var(--transition-normal);
+    box-shadow: var(--elevation-1);
+    background-color: var(--surface);
+    color: var(--primary-color);
+    min-width: 64px;
+    position: relative;
+    overflow: hidden;
+}
+
+.button:hover {
+    box-shadow: var(--elevation-2);
+    background-color: rgba(25, 118, 210, 0.04);
+}
+
+.button:active {
+    box-shadow: var(--elevation-3);
+    transform: translateY(1px);
+}
+
+.button:disabled {
+    background-color: rgba(0, 0, 0, 0.12);
+    color: var(--text-disabled);
+    box-shadow: none;
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.button-primary {
+    background-color: var(--primary-color);
+    color: white;
+}
+
+.button-primary:hover {
+    background-color: var(--primary-dark);
+    box-shadow: var(--elevation-3);
+}
+
+.button-primary:disabled {
+    background-color: rgba(0, 0, 0, 0.12);
+    color: var(--text-disabled);
+}
+
+.button-secondary {
+    background-color: var(--secondary-color);
+    color: white;
+}
+
+.button-secondary:hover {
+    background-color: var(--secondary-dark);
+}
+
+.button-danger {
+    background-color: var(--error-color);
+    color: white;
+}
+
+.button-danger:hover {
+    background-color: #c62828;
+}
+
+/* ============================================
+   Operation Rows
+   ============================================ */
 .agro-operation-row {
-    border: 1px solid #e1e1e1;
-    padding: 12px;
-    border-radius: 6px;
-    margin-bottom: 12px;
-    background: #fafafa;
+    border: 2px solid var(--divider);
+    padding: var(--spacing-md);
+    border-radius: var(--radius-md);
+    margin-bottom: var(--spacing-md);
+    background: rgba(25, 118, 210, 0.02);
+    transition: all var(--transition-normal);
+}
+
+.agro-operation-row:hover {
+    border-color: var(--primary-light);
+    box-shadow: var(--elevation-1);
 }
 
 .agro-operation-row .row-actions {
     text-align: right;
-    margin-top: 8px;
+    margin-top: var(--spacing-md);
+    padding-top: var(--spacing-md);
+    border-top: 1px solid var(--divider);
 }
 
+.agro-operation-row .op-remove {
+    color: var(--error-color);
+    text-decoration: none;
+    font-weight: 500;
+    font-size: 14px;
+    padding: var(--spacing-sm) var(--spacing-md);
+    border-radius: var(--radius-sm);
+    transition: all var(--transition-fast);
+    display: inline-block;
+}
+
+.agro-operation-row .op-remove:hover {
+    background-color: rgba(211, 47, 47, 0.08);
+    color: #c62828;
+}
+
+.agro-operation-row .op-extra {
+    margin-top: var(--spacing-md);
+    padding-top: var(--spacing-md);
+    border-top: 1px solid var(--divider);
+}
+
+/* ============================================
+   Summary Tables
+   ============================================ */
 .agro-summary-table {
     width: 100%;
-    border-collapse: collapse;
+    border-collapse: separate;
+    border-spacing: 0;
+    margin: var(--spacing-md) 0;
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    box-shadow: var(--elevation-1);
 }
 
-.agro-summary-table th,
-.agro-summary-table td {
-    border: 1px solid #e1e1e1;
-    padding: 8px;
+.agro-summary-table th {
+    background-color: var(--primary-color);
+    color: white;
+    padding: 12px 16px;
     text-align: left;
+    font-weight: 500;
+    font-size: 14px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
 }
 
+.agro-summary-table td {
+    padding: 12px 16px;
+    text-align: left;
+    border-bottom: 1px solid var(--divider);
+    background-color: var(--surface);
+}
+
+.agro-summary-table tbody tr {
+    transition: background-color var(--transition-fast);
+}
+
+.agro-summary-table tbody tr:hover {
+    background-color: rgba(25, 118, 210, 0.04);
+}
+
+.agro-summary-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+/* ============================================
+   Pills & Badges
+   ============================================ */
 .agro-pill {
     display: inline-block;
-    padding: 2px 8px;
-    border-radius: 999px;
-    background: #eef3ff;
-    color: #1d4ed8;
+    padding: 4px 12px;
+    border-radius: 16px;
+    background: rgba(25, 118, 210, 0.1);
+    color: var(--primary-color);
     font-size: 12px;
-    margin-left: 6px;
+    font-weight: 500;
+    margin-left: var(--spacing-sm);
+    letter-spacing: 0.3px;
 }
 
+/* ============================================
+   Tabs - Material Design
+   ============================================ */
 .agro-tabs {
     display: flex;
-    gap: 8px;
-    margin-bottom: 16px;
+    gap: var(--spacing-sm);
+    margin-bottom: var(--spacing-lg);
     flex-wrap: wrap;
+    padding: var(--spacing-sm);
+    background: var(--surface);
+    border-radius: var(--radius-md);
+    box-shadow: var(--elevation-1);
 }
 
 .agro-tab {
-    padding: 8px 12px;
-    border-radius: 6px;
-    background: #f3f4f6;
-    border: 1px solid #e5e7eb;
+    padding: 10px 20px;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    border: 2px solid transparent;
     cursor: pointer;
-    transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+    transition: all var(--transition-normal);
+    font-weight: 500;
+    font-size: 14px;
+    color: var(--text-secondary);
+    position: relative;
+}
+
+.agro-tab:hover {
+    background: rgba(25, 118, 210, 0.04);
+    color: var(--primary-color);
 }
 
 .agro-tab.active {
-    background: #1d4ed8;
-    color: #fff;
-    border-color: #1d4ed8;
+    background: var(--primary-color);
+    color: white;
+    box-shadow: var(--elevation-2);
+}
+
+.agro-tab.active::after {
+    content: '';
+    position: absolute;
+    bottom: -2px;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: var(--primary-dark);
 }
 
 .agro-tab.add-tab {
-    background: #e0f2fe;
-    border-color: #93c5fd;
-    color: #1e3a8a;
+    background: rgba(56, 142, 60, 0.1);
+    border-color: transparent;
+    color: var(--secondary-color);
     font-weight: 600;
 }
 
+.agro-tab.add-tab:hover {
+    background: rgba(56, 142, 60, 0.15);
+    color: var(--secondary-dark);
+    box-shadow: var(--elevation-1);
+}
+
+/* ============================================
+   Currency Toggle
+   ============================================ */
 .agro-currency-toggle {
     display: flex;
     align-items: center;
-    gap: 12px;
-    margin-bottom: 12px;
+    gap: var(--spacing-md);
+    margin-bottom: var(--spacing-md);
+    padding: var(--spacing-md);
+    background: rgba(25, 118, 210, 0.04);
+    border-radius: var(--radius-sm);
+    border: 2px solid var(--divider);
 }
+
+.agro-currency-toggle strong {
+    color: var(--text-primary);
+    font-weight: 500;
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.agro-currency-toggle label {
+    display: flex;
+    align-items: center;
+    padding: var(--spacing-sm) var(--spacing-md);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    font-weight: 500;
+    font-size: 14px;
+}
+
+.agro-currency-toggle label:hover {
+    background: rgba(25, 118, 210, 0.08);
+}
+
+.agro-currency-toggle input[type="radio"] {
+    margin-right: var(--spacing-sm);
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+    accent-color: var(--primary-color);
+}
+
+/* ============================================
+   Loading States
+   ============================================ */
+.agro-loading {
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    border: 3px solid rgba(255, 255, 255, 0.3);
+    border-radius: 50%;
+    border-top-color: white;
+    animation: spin 0.8s linear infinite;
+    margin-right: var(--spacing-sm);
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+.button.loading {
+    pointer-events: none;
+    opacity: 0.7;
+}
+
+/* ============================================
+   Toast Notifications
+   ============================================ */
+.agro-toast {
+    position: fixed;
+    bottom: var(--spacing-lg);
+    left: 50%;
+    transform: translateX(-50%) translateY(100px);
+    background: #323232;
+    color: white;
+    padding: 14px 24px;
+    border-radius: var(--radius-sm);
+    box-shadow: var(--elevation-4);
+    font-size: 14px;
+    font-weight: 400;
+    z-index: 10000;
+    opacity: 0;
+    transition: all var(--transition-normal);
+    max-width: 90%;
+    text-align: center;
+}
+
+.agro-toast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+}
+
+.agro-toast.success {
+    background: var(--success-color);
+}
+
+.agro-toast.error {
+    background: var(--error-color);
+}
+
+.agro-toast.warning {
+    background: var(--warning-color);
+}
+
+/* ============================================
+   Validation Error Messages
+   ============================================ */
+.agro-error-message {
+    color: var(--error-color);
+    font-size: 12px;
+    margin-top: var(--spacing-xs);
+    display: none;
+    font-weight: 500;
+}
+
+.agro-error-message.show {
+    display: block;
+    animation: slideDown var(--transition-fast);
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-4px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.agro-grid label.error input,
+.agro-grid label.error select {
+    border-color: var(--error-color);
+}
+
+.agro-grid label.error input:focus,
+.agro-grid label.error select:focus {
+    box-shadow: 0 0 0 3px rgba(211, 47, 47, 0.1);
+}
+
+/* ============================================
+   Responsive Design
+   ============================================ */
+@media (max-width: 768px) {
+    .agro-wrapper {
+        padding: 0 var(--spacing-sm);
+        margin: var(--spacing-md) auto;
+    }
+
+    .agro-wrapper h2 {
+        font-size: 24px;
+        margin-bottom: var(--spacing-md);
+    }
+
+    .agro-wrapper h3 {
+        font-size: 20px;
+    }
+
+    .agro-card {
+        padding: var(--spacing-md);
+        margin-bottom: var(--spacing-md);
+    }
+
+    .agro-grid {
+        grid-template-columns: 1fr;
+        gap: var(--spacing-sm);
+    }
+
+    .agro-map {
+        height: 400px;
+    }
+
+    .agro-tabs {
+        padding: var(--spacing-xs);
+        gap: var(--spacing-xs);
+    }
+
+    .agro-tab {
+        padding: 8px 12px;
+        font-size: 13px;
+    }
+
+    .agro-actions {
+        flex-direction: column;
+    }
+
+    .button {
+        width: 100%;
+    }
+
+    .agro-summary-table {
+        font-size: 13px;
+    }
+
+    .agro-summary-table th,
+    .agro-summary-table td {
+        padding: 8px 10px;
+    }
+}
+
+@media (max-width: 480px) {
+    .agro-wrapper h2 {
+        font-size: 20px;
+    }
+
+    .agro-map {
+        height: 300px;
+    }
+
+    .agro-tabs {
+        flex-direction: column;
+    }
+
+    .agro-tab {
+        width: 100%;
+        text-align: center;
+    }
+}
+
+/* ============================================
+   Print Styles
+   ============================================ */
+@media print {
+    .agro-wrapper {
+        max-width: 100%;
+    }
+
+    .agro-card {
+        box-shadow: none;
+        border: 1px solid var(--divider);
+        page-break-inside: avoid;
+    }
+
+    .agro-tabs,
+    .agro-actions,
+    .agro-map {
+        display: none;
+    }
+}
+
+/* ============================================
+   Utility Classes
+   ============================================ */
+.text-center {
+    text-align: center;
+}
+
+.mt-sm { margin-top: var(--spacing-sm); }
+.mt-md { margin-top: var(--spacing-md); }
+.mt-lg { margin-top: var(--spacing-lg); }
+
+.mb-sm { margin-bottom: var(--spacing-sm); }
+.mb-md { margin-bottom: var(--spacing-md); }
+.mb-lg { margin-bottom: var(--spacing-lg); }
+
+.p-sm { padding: var(--spacing-sm); }
+.p-md { padding: var(--spacing-md); }
+.p-lg { padding: var(--spacing-lg); }
+
+.text-primary { color: var(--primary-color); }
+.text-secondary { color: var(--text-secondary); }
+.text-success { color: var(--success-color); }
+.text-error { color: var(--error-color); }
+.text-warning { color: var(--warning-color); }
+
+.font-weight-bold { font-weight: 500; }
+.font-weight-normal { font-weight: 400; }
