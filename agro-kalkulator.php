@@ -560,6 +560,31 @@ class AgroKalkulator
             <?php if ($imported) : ?>
                 <div class="notice notice-success"><p>Uvezeno <?php echo esc_html($fuels_count); ?> goriva, <?php echo esc_html($tractors_count); ?> traktora, <?php echo esc_html($operations_count); ?> operacija.</p></div>
             <?php endif; ?>
+
+            <div class="notice notice-info">
+                <h3>Format CSV fajlova</h3>
+                <p><strong>Važne napomene:</strong></p>
+                <ul style="list-style: disc; margin-left: 20px;">
+                    <li>CSV fajlovi mogu koristiti zarez (,) ili tačku-zarez (;) kao separator</li>
+                    <li>Imena kolona nisu osetljiva na velika/mala slova (može biti "ID", "id", ili "Id")</li>
+                    <li>Podržan je UTF-8 encoding sa ili bez BOM karaktera</li>
+                    <li>Decimalni brojevi mogu koristiti zarez ili tačku (npr. "12,5" ili "12.5")</li>
+                    <li><strong>Napomena:</strong> Uvoz podataka će spojiti nove stavke sa postojećim (neće obrisati postojeće podatke)</li>
+                </ul>
+
+                <h4>CSV goriva - obavezne kolone:</h4>
+                <code>energent_id, naziv, jedinica, cena_din_po_l, aktivan</code>
+                <p><em>Primer: euro_dizel,Euro Dizel,litar,204,1</em></p>
+
+                <h4>CSV traktori - obavezne kolone:</h4>
+                <code>id, naziv, snaga_kw_od, snaga_kw_do, snaga_ks_tekst, jm, potrosnja_l_po_jm, cena_din_po_jm</code>
+                <p><em>Primer: traktor_33,Traktor do 33kW,0,33,45 KS,čas,4,1770</em></p>
+
+                <h4>CSV operacije - obavezne kolone:</h4>
+                <code>id, naziv, glavna_grupa, potgrupa, jm, potrosnja_l_po_jm, cena_din_po_jm</code>
+                <p><em>Primer: oranje,Oranje do 25cm,Osnovna obrada,,ha,24,7000</em></p>
+            </div>
+
             <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" enctype="multipart/form-data">
                 <?php wp_nonce_field(self::NONCE_ACTION); ?>
                 <input type="hidden" name="action" value="agro_import_data">
@@ -634,8 +659,14 @@ class AgroKalkulator
             fclose($handle);
             return $rows;
         }
+        // Remove UTF-8 BOM if present
+        $first_line = $this->remove_utf8_bom($first_line);
+
         $delimiter = substr_count($first_line, ';') > substr_count($first_line, ',') ? ';' : ',';
         $headers = array_map('trim', str_getcsv($first_line, $delimiter));
+        // Normalize headers to lowercase for case-insensitive matching
+        $headers = array_map('strtolower', $headers);
+
         while (($data = fgetcsv($handle, 0, $delimiter)) !== false) {
             if (!array_filter($data, 'strlen')) {
                 continue;
@@ -648,6 +679,12 @@ class AgroKalkulator
         }
         fclose($handle);
         return $rows;
+    }
+
+    private function remove_utf8_bom($text)
+    {
+        $bom = pack('H*','EFBBBF');
+        return preg_replace("/^$bom/", '', $text);
     }
 
     private function parse_float_value($value)
@@ -836,7 +873,9 @@ class AgroKalkulator
     private function import_fuels_from_csv($file)
     {
         $rows = $this->parse_csv_rows($file);
-        $fuels = [];
+        $fuels = get_option('agro_fuels', []);
+        $imported = 0;
+
         foreach ($rows as $row) {
             $fuel_id = sanitize_key($row['energent_id'] ?? '');
             if (!$fuel_id) {
@@ -849,17 +888,21 @@ class AgroKalkulator
                 'price_per_liter' => isset($row['cena_din_po_l']) ? $this->parse_float_value($row['cena_din_po_l']) : 0,
                 'active' => isset($row['aktivan']) ? (int)$row['aktivan'] : 0,
             ];
+            $imported++;
         }
-        if ($fuels) {
+
+        if ($imported > 0) {
             update_option('agro_fuels', $fuels);
         }
-        return count($fuels);
+        return $imported;
     }
 
     private function import_tractors_from_csv($file)
     {
         $rows = $this->parse_csv_rows($file);
-        $tractors = [];
+        $tractors = get_option('agro_tractors', []);
+        $imported = 0;
+
         foreach ($rows as $row) {
             $tractor_id = sanitize_key($row['id'] ?? '');
             if (!$tractor_id) {
@@ -875,17 +918,21 @@ class AgroKalkulator
                 'fuel_l_per_unit' => isset($row['potrosnja_l_po_jm']) ? $this->parse_float_value($row['potrosnja_l_po_jm']) : 0,
                 'price_per_unit' => isset($row['cena_din_po_jm']) ? $this->parse_float_value($row['cena_din_po_jm']) : 0,
             ];
+            $imported++;
         }
-        if ($tractors) {
+
+        if ($imported > 0) {
             update_option('agro_tractors', $tractors);
         }
-        return count($tractors);
+        return $imported;
     }
 
     private function import_operations_from_csv($file)
     {
         $rows = $this->parse_csv_rows($file);
-        $operations = [];
+        $operations = get_option('agro_operations', []);
+        $imported = 0;
+
         foreach ($rows as $row) {
             $operation_id = sanitize_key($row['id'] ?? '');
             if (!$operation_id) {
@@ -900,11 +947,13 @@ class AgroKalkulator
                 'fuel_l_per_unit' => isset($row['potrosnja_l_po_jm']) ? $this->parse_float_value($row['potrosnja_l_po_jm']) : 0,
                 'price_per_unit' => isset($row['cena_din_po_jm']) ? $this->parse_float_value($row['cena_din_po_jm']) : 0,
             ];
+            $imported++;
         }
-        if ($operations) {
+
+        if ($imported > 0) {
             update_option('agro_operations', $operations);
         }
-        return count($operations);
+        return $imported;
     }
 
     public function handle_delete_crop()
