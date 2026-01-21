@@ -7,6 +7,42 @@
         eurRate: data.eurRate || 117,
     };
 
+    // Toast Notification System
+    function showToast(message, type = 'info') {
+        const existingToast = document.querySelector('.agro-toast');
+        if (existingToast) {
+            existingToast.remove();
+        }
+
+        const toast = document.createElement('div');
+        toast.className = `agro-toast ${type}`;
+        toast.textContent = message;
+        document.body.appendChild(toast);
+
+        setTimeout(() => toast.classList.add('show'), 10);
+
+        setTimeout(() => {
+            toast.classList.remove('show');
+            setTimeout(() => toast.remove(), 300);
+        }, 3000);
+    }
+
+    // Loading State Management
+    function setButtonLoading(button, isLoading) {
+        if (isLoading) {
+            button.classList.add('loading');
+            button.disabled = true;
+            const spinner = document.createElement('span');
+            spinner.className = 'agro-loading';
+            button.insertBefore(spinner, button.firstChild);
+        } else {
+            button.classList.remove('loading');
+            button.disabled = false;
+            const spinner = button.querySelector('.agro-loading');
+            if (spinner) spinner.remove();
+        }
+    }
+
     function createEmptyParcel() {
         return {
             cropId: '',
@@ -447,12 +483,32 @@
     function validateActiveParcel() {
         const parcel = getActiveParcel();
         if (!parcel) return false;
-        const areaValid = parcel.fieldAreaHa > 0;
-        if (!parcel.cropId || !parcel.tractorId || !parcel.fuelId || !areaValid) {
-            alert('Molimo popunite kulturu, traktor, gorivo i unesite površinu (ručno ili preko mape).');
-            return false;
+
+        let isValid = true;
+        const errors = [];
+
+        if (!parcel.cropId) {
+            errors.push('Molimo izaberite kulturu');
+            isValid = false;
         }
-        return true;
+        if (!parcel.tractorId) {
+            errors.push('Molimo izaberite traktor');
+            isValid = false;
+        }
+        if (!parcel.fuelId) {
+            errors.push('Molimo izaberite gorivo');
+            isValid = false;
+        }
+        if (parcel.fieldAreaHa <= 0) {
+            errors.push('Molimo unesite površinu parcele (ručno ili preko mape)');
+            isValid = false;
+        }
+
+        if (!isValid) {
+            showToast(errors.join('. '), 'error');
+        }
+
+        return isValid;
     }
 
     function calculateParcel(parcel) {
@@ -639,25 +695,44 @@
     function saveActiveParcel() {
         syncParcelFromInputs();
         if (!validateActiveParcel()) return;
-        const parcel = getActiveParcel();
-        parcel.result = calculateParcel(parcel);
-        renderResults();
+
+        setButtonLoading(els.saveParcel, true);
+
+        // Simulate async save for better UX
+        setTimeout(() => {
+            const parcel = getActiveParcel();
+            parcel.result = calculateParcel(parcel);
+            renderResults();
+            setButtonLoading(els.saveParcel, false);
+            showToast('Parcela uspešno sačuvana!', 'success');
+        }, 200);
     }
 
     function calculateAllParcels() {
         syncParcelFromInputs();
-        let hasResult = false;
-        state.parcels.forEach(parcel => {
-            if (parcel.cropId && parcel.tractorId && parcel.fuelId && parcel.fieldAreaHa > 0) {
-                parcel.result = calculateParcel(parcel);
-                hasResult = true;
+
+        setButtonLoading(els.calculate, true);
+
+        // Simulate async calculation for better UX
+        setTimeout(() => {
+            let hasResult = false;
+            state.parcels.forEach(parcel => {
+                if (parcel.cropId && parcel.tractorId && parcel.fuelId && parcel.fieldAreaHa > 0) {
+                    parcel.result = calculateParcel(parcel);
+                    hasResult = true;
+                }
+            });
+
+            setButtonLoading(els.calculate, false);
+
+            if (!hasResult) {
+                showToast('Molimo popunite barem jednu parcelu.', 'warning');
+                return;
             }
-        });
-        if (!hasResult) {
-            alert('Molimo popunite barem jednu parcelu.');
-            return;
-        }
-        renderResults();
+
+            renderResults();
+            showToast('Kalkulacija uspešno završena!', 'success');
+        }, 300);
     }
 
     function switchParcel(index) {
@@ -673,28 +748,50 @@
         state.activeParcelIndex = state.parcels.length - 1;
         renderTabs();
         loadParcelToForm(getActiveParcel());
+        showToast(`Dodana nova parcela ${state.parcels.length}`, 'success');
     }
 
     function resetAll() {
+        if (state.parcels.some(p => p.result)) {
+            if (!confirm('Da li ste sigurni da želite da resetujete sve podatke? Ova akcija ne može biti poništena.')) {
+                return;
+            }
+        }
+
         state.parcels = [createEmptyParcel()];
         state.activeParcelIndex = 0;
         renderTabs();
         loadParcelToForm(getActiveParcel());
         els.results.innerHTML = '';
         els.pdf.disabled = true;
+        showToast('Kalkulacija je resetovana', 'info');
     }
 
     function sendPdf() {
         const payload = els.pdf.dataset.payload;
-        if (!payload) return;
+        if (!payload) {
+            showToast('Nema podataka za PDF izvještaj', 'error');
+            return;
+        }
+
+        setButtonLoading(els.pdf, true);
+
         const formData = new FormData();
         formData.append('action', 'agro_generate_pdf');
         formData.append('nonce', data.nonce);
         formData.append('data', payload);
+
         fetch(data.ajaxUrl, {
             method: 'POST',
             body: formData,
-        }).then(response => response.blob()).then(blob => {
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Greška pri generisanju PDF-a');
+            }
+            return response.blob();
+        })
+        .then(blob => {
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
@@ -703,6 +800,14 @@
             a.click();
             a.remove();
             window.URL.revokeObjectURL(url);
+            showToast('PDF uspešno preuzet!', 'success');
+        })
+        .catch(error => {
+            console.error('PDF generation error:', error);
+            showToast('Greška pri generisanju PDF-a. Molimo pokušajte ponovo.', 'error');
+        })
+        .finally(() => {
+            setButtonLoading(els.pdf, false);
         });
     }
 
