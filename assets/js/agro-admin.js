@@ -1,12 +1,53 @@
 (function ($) {
     'use strict';
 
-    // Check if we're on the operations page
-    if (!document.getElementById('agro-operations-table')) {
+    // Check if we're on an admin page with the entities table
+    const $table = $('#agro-entities-table, #agro-operations-table');
+    if (!$table.length) {
         return;
     }
 
     const { ajaxUrl, nonce } = window.agroAdminData || {};
+
+    // Entity type mapping for messages and actions
+    const entityConfig = {
+        fuel: {
+            singular: 'gorivo',
+            plural: 'goriva',
+            genitive: 'goriva',
+            action: 'agro_ajax_delete_fuel',
+            bulkAction: 'agro_ajax_bulk_delete_fuels',
+            idParam: 'fuel_id',
+            bulkIdParam: 'fuel_ids'
+        },
+        tractor: {
+            singular: 'traktor',
+            plural: 'traktora',
+            genitive: 'traktora',
+            action: 'agro_ajax_delete_tractor',
+            bulkAction: 'agro_ajax_bulk_delete_tractors',
+            idParam: 'tractor_id',
+            bulkIdParam: 'tractor_ids'
+        },
+        operation: {
+            singular: 'operaciju',
+            plural: 'operacija',
+            genitive: 'operacije',
+            action: 'agro_ajax_delete_operation',
+            bulkAction: 'agro_ajax_bulk_delete_operations',
+            idParam: 'operation_id',
+            bulkIdParam: 'operation_ids'
+        },
+        crop: {
+            singular: 'kulturu',
+            plural: 'kultura',
+            genitive: 'kulture',
+            action: 'agro_ajax_delete_crop',
+            bulkAction: 'agro_ajax_bulk_delete_crops',
+            idParam: 'crop_id',
+            bulkIdParam: 'crop_ids'
+        }
+    };
 
     // Show toast notification
     function showToast(message, type = 'success') {
@@ -25,7 +66,7 @@
 
     // Update selected count and bulk delete button visibility
     function updateBulkDeleteButton() {
-        const selectedCount = $('.agro-operation-checkbox:checked').length;
+        const selectedCount = $('.agro-entity-checkbox, .agro-operation-checkbox').filter(':checked').length;
         $('#agro-selected-count').text(selectedCount);
 
         if (selectedCount > 0) {
@@ -36,30 +77,37 @@
     }
 
     // Handle select all checkbox
-    $('#agro-select-all-operations').on('change', function () {
+    $('#agro-select-all, #agro-select-all-operations').on('change', function () {
         const isChecked = $(this).prop('checked');
-        $('.agro-operation-checkbox').prop('checked', isChecked);
+        $('.agro-entity-checkbox, .agro-operation-checkbox').prop('checked', isChecked);
         updateBulkDeleteButton();
     });
 
     // Handle individual checkbox change
-    $(document).on('change', '.agro-operation-checkbox', function () {
-        const totalCheckboxes = $('.agro-operation-checkbox').length;
-        const checkedCheckboxes = $('.agro-operation-checkbox:checked').length;
+    $(document).on('change', '.agro-entity-checkbox, .agro-operation-checkbox', function () {
+        const totalCheckboxes = $('.agro-entity-checkbox, .agro-operation-checkbox').length;
+        const checkedCheckboxes = $('.agro-entity-checkbox, .agro-operation-checkbox').filter(':checked').length;
 
-        $('#agro-select-all-operations').prop('checked', totalCheckboxes === checkedCheckboxes);
+        $('#agro-select-all, #agro-select-all-operations').prop('checked', totalCheckboxes === checkedCheckboxes);
         updateBulkDeleteButton();
     });
 
     // Handle single delete
-    $(document).on('click', '.agro-delete-operation', function (e) {
+    $(document).on('click', '.agro-delete-entity, .agro-delete-operation', function (e) {
         e.preventDefault();
 
         const $link = $(this);
-        const operationId = $link.data('operation-id');
-        const operationName = $link.data('operation-name');
+        const entityId = $link.data('entity-id') || $link.data('operation-id');
+        const entityName = $link.data('entity-name') || $link.data('operation-name');
+        const entityType = $link.data('entity-type') || 'operation';
+        const config = entityConfig[entityType];
 
-        if (!confirm('Da li ste sigurni da želite da obrišete operaciju "' + operationName + '"?')) {
+        if (!config) {
+            console.error('Unknown entity type:', entityType);
+            return;
+        }
+
+        if (!confirm('Da li ste sigurni da želite da obrišete ' + config.singular + ' "' + entityName + '"?')) {
             return;
         }
 
@@ -67,14 +115,16 @@
         $row.css('opacity', '0.5');
         $link.text('Brisanje...');
 
+        const ajaxData = {
+            action: config.action,
+            nonce: nonce
+        };
+        ajaxData[config.idParam] = entityId;
+
         $.ajax({
             url: ajaxUrl,
             type: 'POST',
-            data: {
-                action: 'agro_ajax_delete_operation',
-                nonce: nonce,
-                operation_id: operationId
-            },
+            data: ajaxData,
             success: function (response) {
                 if (response.success) {
                     $row.fadeOut(300, function () {
@@ -82,7 +132,7 @@
                         updateBulkDeleteButton();
 
                         // If no rows left, reload the page to show empty state
-                        if ($('#agro-operations-table tbody tr').length === 0) {
+                        if ($table.find('tbody tr').length === 0) {
                             location.reload();
                         }
                     });
@@ -90,7 +140,7 @@
                 } else {
                     $row.css('opacity', '1');
                     $link.text('Obriši');
-                    showToast(response.data.message || 'Greška pri brisanju operacije.', 'error');
+                    showToast(response.data.message || 'Greška pri brisanju.', 'error');
                 }
             },
             error: function () {
@@ -103,21 +153,29 @@
 
     // Handle bulk delete
     $('#agro-bulk-delete-btn').on('click', function () {
-        const selectedCount = $('.agro-operation-checkbox:checked').length;
+        const selectedCount = $('.agro-entity-checkbox, .agro-operation-checkbox').filter(':checked').length;
 
         if (selectedCount === 0) {
             return;
         }
 
-        if (!confirm('Da li ste sigurni da želite da obrišete ' + selectedCount + ' operacija?')) {
+        const entityType = $(this).data('entity') || 'operation';
+        const config = entityConfig[entityType];
+
+        if (!config) {
+            console.error('Unknown entity type:', entityType);
             return;
         }
 
-        const operationIds = [];
+        if (!confirm('Da li ste sigurni da želite da obrišete ' + selectedCount + ' ' + config.plural + '?')) {
+            return;
+        }
+
+        const entityIds = [];
         const $selectedRows = [];
 
-        $('.agro-operation-checkbox:checked').each(function () {
-            operationIds.push($(this).val());
+        $('.agro-entity-checkbox, .agro-operation-checkbox').filter(':checked').each(function () {
+            entityIds.push($(this).val());
             $selectedRows.push($(this).closest('tr'));
         });
 
@@ -125,14 +183,16 @@
         $selectedRows.forEach($row => $row.css('opacity', '0.5'));
         $(this).prop('disabled', true).text('Brisanje...');
 
+        const ajaxData = {
+            action: config.bulkAction,
+            nonce: nonce
+        };
+        ajaxData[config.bulkIdParam] = entityIds;
+
         $.ajax({
             url: ajaxUrl,
             type: 'POST',
-            data: {
-                action: 'agro_ajax_bulk_delete_operations',
-                nonce: nonce,
-                operation_ids: operationIds
-            },
+            data: ajaxData,
             success: function (response) {
                 if (response.success) {
                     $selectedRows.forEach($row => {
@@ -140,19 +200,19 @@
                             $(this).remove();
 
                             // If no rows left, reload the page
-                            if ($('#agro-operations-table tbody tr').length === 0) {
+                            if ($table.find('tbody tr').length === 0) {
                                 location.reload();
                             }
                         });
                     });
 
                     $('#agro-bulk-delete-btn').prop('disabled', false).text('Obriši odabrane (0)').hide();
-                    $('#agro-select-all-operations').prop('checked', false);
+                    $('#agro-select-all, #agro-select-all-operations').prop('checked', false);
                     showToast(response.data.message, 'success');
                 } else {
                     $selectedRows.forEach($row => $row.css('opacity', '1'));
                     $('#agro-bulk-delete-btn').prop('disabled', false).text('Obriši odabrane (' + selectedCount + ')');
-                    showToast(response.data.message || 'Greška pri brisanju operacija.', 'error');
+                    showToast(response.data.message || 'Greška pri brisanju.', 'error');
                 }
             },
             error: function () {
