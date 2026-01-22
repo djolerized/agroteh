@@ -20,12 +20,15 @@ class AgroKalkulator
         add_action('init', [$this, 'register_shortcode']);
         add_action('wp_enqueue_scripts', [$this, 'register_assets']);
         add_action('admin_menu', [$this, 'register_admin_menu']);
+        add_action('admin_enqueue_scripts', [$this, 'register_admin_assets']);
         add_action('admin_post_agro_save_fuel', [$this, 'handle_save_fuel']);
         add_action('admin_post_agro_delete_fuel', [$this, 'handle_delete_fuel']);
         add_action('admin_post_agro_save_tractor', [$this, 'handle_save_tractor']);
         add_action('admin_post_agro_delete_tractor', [$this, 'handle_delete_tractor']);
         add_action('admin_post_agro_save_operation', [$this, 'handle_save_operation']);
         add_action('admin_post_agro_delete_operation', [$this, 'handle_delete_operation']);
+        add_action('wp_ajax_agro_ajax_delete_operation', [$this, 'handle_ajax_delete_operation']);
+        add_action('wp_ajax_agro_ajax_bulk_delete_operations', [$this, 'handle_ajax_bulk_delete_operations']);
         add_action('admin_post_agro_save_crop', [$this, 'handle_save_crop']);
         add_action('admin_post_agro_delete_crop', [$this, 'handle_delete_crop']);
         add_action('admin_post_agro_import_data', [$this, 'handle_import_data']);
@@ -222,6 +225,21 @@ class AgroKalkulator
             'operations' => array_values($operations),
             'crops' => array_values($crops),
             'eurRate' => (float)$eur_rate,
+        ]);
+    }
+
+    public function register_admin_assets($hook)
+    {
+        if ($hook !== 'agro-kalkulator_page_agro-operations') {
+            return;
+        }
+
+        $plugin_url = plugin_dir_url(__FILE__);
+        wp_enqueue_style('agro-admin', $plugin_url . 'assets/css/agro-admin.css', [], self::VERSION);
+        wp_enqueue_script('agro-admin', $plugin_url . 'assets/js/agro-admin.js', ['jquery'], self::VERSION, true);
+        wp_localize_script('agro-admin', 'agroAdminData', [
+            'ajaxUrl' => admin_url('admin-ajax.php'),
+            'nonce' => wp_create_nonce('agro_admin_nonce'),
         ]);
     }
 
@@ -462,13 +480,26 @@ class AgroKalkulator
         ?>
         <div class="wrap">
             <h1>Operacije</h1>
-            <table class="widefat">
+            <div class="agro-bulk-actions" style="margin-bottom: 10px;">
+                <button type="button" id="agro-bulk-delete-btn" class="button" style="display: none;">
+                    Obriši odabrane (<span id="agro-selected-count">0</span>)
+                </button>
+            </div>
+            <table class="widefat" id="agro-operations-table">
                 <thead>
-                <?php $this->admin_table_header(['Naziv', 'Glavna grupa', 'Podgrupa', 'J.m.', 'Potrošnja (l/j.m.)', 'Cena (din/j.m.)', 'Akcije']); ?>
+                <tr>
+                    <th style="width: 2.2em;" class="check-column">
+                        <input type="checkbox" id="agro-select-all-operations">
+                    </th>
+                    <?php $this->admin_table_header(['Naziv', 'Glavna grupa', 'Podgrupa', 'J.m.', 'Potrošnja (l/j.m.)', 'Cena (din/j.m.)', 'Akcije']); ?>
+                </tr>
                 </thead>
                 <tbody>
                 <?php foreach ($operations as $operation) : ?>
                     <tr>
+                        <th scope="row" class="check-column">
+                            <input type="checkbox" class="agro-operation-checkbox" value="<?php echo esc_attr($operation['operation_id']); ?>">
+                        </th>
                         <td><?php echo esc_html($operation['name']); ?></td>
                         <td><?php echo esc_html($operation['main_group']); ?></td>
                         <td><?php echo esc_html($operation['sub_group']); ?></td>
@@ -477,7 +508,7 @@ class AgroKalkulator
                         <td><?php echo esc_html($operation['price_per_unit']); ?></td>
                         <td>
                             <a href="<?php echo esc_url(add_query_arg(['edit' => $operation['operation_id']])); ?>">Izmeni</a> |
-                            <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin-post.php?action=agro_delete_operation&operation_id=' . $operation['operation_id']), self::NONCE_ACTION)); ?>">Obriši</a>
+                            <a href="#" class="agro-delete-operation" data-operation-id="<?php echo esc_attr($operation['operation_id']); ?>" data-operation-name="<?php echo esc_attr($operation['name']); ?>">Obriši</a>
                         </td>
                     </tr>
                 <?php endforeach; ?>
@@ -818,8 +849,60 @@ class AgroKalkulator
             unset($operations[$operation_id]);
             update_option('agro_operations', $operations);
         }
-        wp_safe_redirect(remove_query_arg(['edit', 'operation_id']));
+        $redirect_url = admin_url('admin.php?page=agro-operations');
+        wp_safe_redirect($redirect_url);
         exit;
+    }
+
+    public function handle_ajax_delete_operation()
+    {
+        $this->require_capability();
+        check_ajax_referer('agro_admin_nonce', 'nonce');
+
+        $operations = get_option('agro_operations', []);
+        $operation_id = sanitize_key($_POST['operation_id'] ?? '');
+
+        if (!$operation_id) {
+            wp_send_json_error(['message' => 'ID operacije nije prosleđen.']);
+        }
+
+        if (!isset($operations[$operation_id])) {
+            wp_send_json_error(['message' => 'Operacija nije pronađena.']);
+        }
+
+        unset($operations[$operation_id]);
+        update_option('agro_operations', $operations);
+
+        wp_send_json_success(['message' => 'Operacija je uspešno obrisana.']);
+    }
+
+    public function handle_ajax_bulk_delete_operations()
+    {
+        $this->require_capability();
+        check_ajax_referer('agro_admin_nonce', 'nonce');
+
+        $operations = get_option('agro_operations', []);
+        $operation_ids = isset($_POST['operation_ids']) ? (array) $_POST['operation_ids'] : [];
+
+        if (empty($operation_ids)) {
+            wp_send_json_error(['message' => 'Nije odabrana nijedna operacija.']);
+        }
+
+        $deleted_count = 0;
+        foreach ($operation_ids as $operation_id) {
+            $operation_id = sanitize_key($operation_id);
+            if (isset($operations[$operation_id])) {
+                unset($operations[$operation_id]);
+                $deleted_count++;
+            }
+        }
+
+        update_option('agro_operations', $operations);
+
+        wp_send_json_success([
+            'message' => sprintf('Uspešno obrisano %d operacija.', $deleted_count),
+            'deleted_count' => $deleted_count
+        ]);
     }
 
     public function handle_save_crop()
