@@ -23,14 +23,20 @@ class AgroKalkulator
         add_action('admin_enqueue_scripts', [$this, 'register_admin_assets']);
         add_action('admin_post_agro_save_fuel', [$this, 'handle_save_fuel']);
         add_action('admin_post_agro_delete_fuel', [$this, 'handle_delete_fuel']);
+        add_action('wp_ajax_agro_ajax_delete_fuel', [$this, 'handle_ajax_delete_fuel']);
+        add_action('wp_ajax_agro_ajax_bulk_delete_fuels', [$this, 'handle_ajax_bulk_delete_fuels']);
         add_action('admin_post_agro_save_tractor', [$this, 'handle_save_tractor']);
         add_action('admin_post_agro_delete_tractor', [$this, 'handle_delete_tractor']);
+        add_action('wp_ajax_agro_ajax_delete_tractor', [$this, 'handle_ajax_delete_tractor']);
+        add_action('wp_ajax_agro_ajax_bulk_delete_tractors', [$this, 'handle_ajax_bulk_delete_tractors']);
         add_action('admin_post_agro_save_operation', [$this, 'handle_save_operation']);
         add_action('admin_post_agro_delete_operation', [$this, 'handle_delete_operation']);
         add_action('wp_ajax_agro_ajax_delete_operation', [$this, 'handle_ajax_delete_operation']);
         add_action('wp_ajax_agro_ajax_bulk_delete_operations', [$this, 'handle_ajax_bulk_delete_operations']);
         add_action('admin_post_agro_save_crop', [$this, 'handle_save_crop']);
         add_action('admin_post_agro_delete_crop', [$this, 'handle_delete_crop']);
+        add_action('wp_ajax_agro_ajax_delete_crop', [$this, 'handle_ajax_delete_crop']);
+        add_action('wp_ajax_agro_ajax_bulk_delete_crops', [$this, 'handle_ajax_bulk_delete_crops']);
         add_action('admin_post_agro_import_data', [$this, 'handle_import_data']);
         add_action('admin_post_agro_save_settings', [$this, 'handle_save_settings']);
         add_action('wp_ajax_agro_generate_pdf', [$this, 'handle_generate_pdf']);
@@ -230,7 +236,14 @@ class AgroKalkulator
 
     public function register_admin_assets($hook)
     {
-        if ($hook !== 'agro-kalkulator_page_agro-operations') {
+        $allowed_pages = [
+            'toplevel_page_agro-kalkulator',           // Goriva page
+            'agro-kalkulator_page_agro-tractors',      // Traktori page
+            'agro-kalkulator_page_agro-operations',    // Operacije page
+            'agro-kalkulator_page_agro-crops'          // Kulture page
+        ];
+
+        if (!in_array($hook, $allowed_pages)) {
             return;
         }
 
@@ -368,20 +381,33 @@ class AgroKalkulator
         ?>
         <div class="wrap">
             <h1>Goriva</h1>
-            <table class="widefat">
+            <div class="agro-bulk-actions" style="margin-bottom: 10px;">
+                <button type="button" id="agro-bulk-delete-btn" class="button" data-entity="fuel" style="display: none;">
+                    Obriši odabrane (<span id="agro-selected-count">0</span>)
+                </button>
+            </div>
+            <table class="widefat" id="agro-entities-table">
                 <thead>
-                <?php $this->admin_table_header(['Naziv', 'Cena po litru', 'Jedinica', 'Aktivan', 'Akcije']); ?>
+                <tr>
+                    <th style="width: 2.2em;" class="check-column">
+                        <input type="checkbox" id="agro-select-all">
+                    </th>
+                    <?php $this->admin_table_header(['Naziv', 'Cena po litru', 'Jedinica', 'Aktivan', 'Akcije']); ?>
+                </tr>
                 </thead>
                 <tbody>
                 <?php foreach ($fuels as $fuel) : ?>
                     <tr>
+                        <th scope="row" class="check-column">
+                            <input type="checkbox" class="agro-entity-checkbox" value="<?php echo esc_attr($fuel['fuel_id']); ?>">
+                        </th>
                         <td><?php echo esc_html($fuel['name']); ?></td>
                         <td><?php echo esc_html($fuel['price_per_liter']); ?></td>
                         <td><?php echo esc_html($fuel['unit']); ?></td>
                         <td><?php echo !empty($fuel['active']) ? 'Da' : 'Ne'; ?></td>
                         <td>
                             <a href="<?php echo esc_url(add_query_arg(['edit' => $fuel['fuel_id']])); ?>">Izmeni</a> |
-                            <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin-post.php?action=agro_delete_fuel&fuel_id=' . $fuel['fuel_id']), self::NONCE_ACTION)); ?>">Obriši</a>
+                            <a href="#" class="agro-delete-entity" data-entity-id="<?php echo esc_attr($fuel['fuel_id']); ?>" data-entity-name="<?php echo esc_attr($fuel['name']); ?>" data-entity-type="fuel">Obriši</a>
                         </td>
                     </tr>
                 <?php endforeach; ?>
@@ -428,13 +454,26 @@ class AgroKalkulator
         ?>
         <div class="wrap">
             <h1>Traktori</h1>
-            <table class="widefat">
+            <div class="agro-bulk-actions" style="margin-bottom: 10px;">
+                <button type="button" id="agro-bulk-delete-btn" class="button" data-entity="tractor" style="display: none;">
+                    Obriši odabrane (<span id="agro-selected-count">0</span>)
+                </button>
+            </div>
+            <table class="widefat" id="agro-entities-table">
                 <thead>
-                <?php $this->admin_table_header(['Naziv', 'Snaga (kW od/do)', 'KS', 'Potrošnja (l/čas)', 'Cena (din/čas)', 'Akcije']); ?>
+                <tr>
+                    <th style="width: 2.2em;" class="check-column">
+                        <input type="checkbox" id="agro-select-all">
+                    </th>
+                    <?php $this->admin_table_header(['Naziv', 'Snaga (kW od/do)', 'KS', 'Potrošnja (l/čas)', 'Cena (din/čas)', 'Akcije']); ?>
+                </tr>
                 </thead>
                 <tbody>
                 <?php foreach ($tractors as $tractor) : ?>
                     <tr>
+                        <th scope="row" class="check-column">
+                            <input type="checkbox" class="agro-entity-checkbox" value="<?php echo esc_attr($tractor['tractor_id']); ?>">
+                        </th>
                         <td><?php echo esc_html($tractor['name']); ?></td>
                         <td><?php echo esc_html($tractor['power_kw_from'] . ' - ' . $tractor['power_kw_to']); ?></td>
                         <td><?php echo esc_html($tractor['power_hp_label']); ?></td>
@@ -442,7 +481,7 @@ class AgroKalkulator
                         <td><?php echo esc_html($tractor['price_per_unit']); ?></td>
                         <td>
                             <a href="<?php echo esc_url(add_query_arg(['edit' => $tractor['tractor_id']])); ?>">Izmeni</a> |
-                            <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin-post.php?action=agro_delete_tractor&tractor_id=' . $tractor['tractor_id']), self::NONCE_ACTION)); ?>">Obriši</a>
+                            <a href="#" class="agro-delete-entity" data-entity-id="<?php echo esc_attr($tractor['tractor_id']); ?>" data-entity-name="<?php echo esc_attr($tractor['name']); ?>" data-entity-type="tractor">Obriši</a>
                         </td>
                     </tr>
                 <?php endforeach; ?>
@@ -545,17 +584,30 @@ class AgroKalkulator
         ?>
         <div class="wrap">
             <h1>Kulture</h1>
-            <table class="widefat">
+            <div class="agro-bulk-actions" style="margin-bottom: 10px;">
+                <button type="button" id="agro-bulk-delete-btn" class="button" data-entity="crop" style="display: none;">
+                    Obriši odabrane (<span id="agro-selected-count">0</span>)
+                </button>
+            </div>
+            <table class="widefat" id="agro-entities-table">
                 <thead>
-                <?php $this->admin_table_header(['Naziv', 'Akcije']); ?>
+                <tr>
+                    <th style="width: 2.2em;" class="check-column">
+                        <input type="checkbox" id="agro-select-all">
+                    </th>
+                    <?php $this->admin_table_header(['Naziv', 'Akcije']); ?>
+                </tr>
                 </thead>
                 <tbody>
                 <?php foreach ($crops as $crop) : ?>
                     <tr>
+                        <th scope="row" class="check-column">
+                            <input type="checkbox" class="agro-entity-checkbox" value="<?php echo esc_attr($crop['crop_id']); ?>">
+                        </th>
                         <td><?php echo esc_html($crop['name']); ?></td>
                         <td>
                             <a href="<?php echo esc_url(add_query_arg(['edit' => $crop['crop_id']])); ?>">Izmeni</a> |
-                            <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin-post.php?action=agro_delete_crop&crop_id=' . $crop['crop_id']), self::NONCE_ACTION)); ?>">Obriši</a>
+                            <a href="#" class="agro-delete-entity" data-entity-id="<?php echo esc_attr($crop['crop_id']); ?>" data-entity-name="<?php echo esc_attr($crop['name']); ?>" data-entity-type="crop">Obriši</a>
                         </td>
                     </tr>
                 <?php endforeach; ?>
@@ -776,8 +828,60 @@ class AgroKalkulator
             unset($fuels[$fuel_id]);
             update_option('agro_fuels', $fuels);
         }
-        wp_safe_redirect(remove_query_arg(['edit', 'fuel_id']));
+        $redirect_url = admin_url('admin.php?page=agro-kalkulator');
+        wp_safe_redirect($redirect_url);
         exit;
+    }
+
+    public function handle_ajax_delete_fuel()
+    {
+        $this->require_capability();
+        check_ajax_referer('agro_admin_nonce', 'nonce');
+
+        $fuels = get_option('agro_fuels', []);
+        $fuel_id = sanitize_key($_POST['fuel_id'] ?? '');
+
+        if (!$fuel_id) {
+            wp_send_json_error(['message' => 'ID goriva nije prosleđen.']);
+        }
+
+        if (!isset($fuels[$fuel_id])) {
+            wp_send_json_error(['message' => 'Gorivo nije pronađeno.']);
+        }
+
+        unset($fuels[$fuel_id]);
+        update_option('agro_fuels', $fuels);
+
+        wp_send_json_success(['message' => 'Gorivo je uspešno obrisano.']);
+    }
+
+    public function handle_ajax_bulk_delete_fuels()
+    {
+        $this->require_capability();
+        check_ajax_referer('agro_admin_nonce', 'nonce');
+
+        $fuels = get_option('agro_fuels', []);
+        $fuel_ids = isset($_POST['fuel_ids']) ? (array) $_POST['fuel_ids'] : [];
+
+        if (empty($fuel_ids)) {
+            wp_send_json_error(['message' => 'Nije odabrano nijedno gorivo.']);
+        }
+
+        $deleted_count = 0;
+        foreach ($fuel_ids as $fuel_id) {
+            $fuel_id = sanitize_key($fuel_id);
+            if (isset($fuels[$fuel_id])) {
+                unset($fuels[$fuel_id]);
+                $deleted_count++;
+            }
+        }
+
+        update_option('agro_fuels', $fuels);
+
+        wp_send_json_success([
+            'message' => sprintf('Uspešno obrisano %d goriva.', $deleted_count),
+            'deleted_count' => $deleted_count
+        ]);
     }
 
     public function handle_save_tractor()
@@ -813,8 +917,60 @@ class AgroKalkulator
             unset($tractors[$tractor_id]);
             update_option('agro_tractors', $tractors);
         }
-        wp_safe_redirect(remove_query_arg(['edit', 'tractor_id']));
+        $redirect_url = admin_url('admin.php?page=agro-tractors');
+        wp_safe_redirect($redirect_url);
         exit;
+    }
+
+    public function handle_ajax_delete_tractor()
+    {
+        $this->require_capability();
+        check_ajax_referer('agro_admin_nonce', 'nonce');
+
+        $tractors = get_option('agro_tractors', []);
+        $tractor_id = sanitize_key($_POST['tractor_id'] ?? '');
+
+        if (!$tractor_id) {
+            wp_send_json_error(['message' => 'ID traktora nije prosleđen.']);
+        }
+
+        if (!isset($tractors[$tractor_id])) {
+            wp_send_json_error(['message' => 'Traktor nije pronađen.']);
+        }
+
+        unset($tractors[$tractor_id]);
+        update_option('agro_tractors', $tractors);
+
+        wp_send_json_success(['message' => 'Traktor je uspešno obrisan.']);
+    }
+
+    public function handle_ajax_bulk_delete_tractors()
+    {
+        $this->require_capability();
+        check_ajax_referer('agro_admin_nonce', 'nonce');
+
+        $tractors = get_option('agro_tractors', []);
+        $tractor_ids = isset($_POST['tractor_ids']) ? (array) $_POST['tractor_ids'] : [];
+
+        if (empty($tractor_ids)) {
+            wp_send_json_error(['message' => 'Nije odabran nijedan traktor.']);
+        }
+
+        $deleted_count = 0;
+        foreach ($tractor_ids as $tractor_id) {
+            $tractor_id = sanitize_key($tractor_id);
+            if (isset($tractors[$tractor_id])) {
+                unset($tractors[$tractor_id]);
+                $deleted_count++;
+            }
+        }
+
+        update_option('agro_tractors', $tractors);
+
+        wp_send_json_success([
+            'message' => sprintf('Uspešno obrisano %d traktora.', $deleted_count),
+            'deleted_count' => $deleted_count
+        ]);
     }
 
     public function handle_save_operation()
@@ -1049,8 +1205,60 @@ class AgroKalkulator
             unset($crops[$crop_id]);
             update_option('agro_crops', $crops);
         }
-        wp_safe_redirect(remove_query_arg(['edit', 'crop_id']));
+        $redirect_url = admin_url('admin.php?page=agro-crops');
+        wp_safe_redirect($redirect_url);
         exit;
+    }
+
+    public function handle_ajax_delete_crop()
+    {
+        $this->require_capability();
+        check_ajax_referer('agro_admin_nonce', 'nonce');
+
+        $crops = get_option('agro_crops', []);
+        $crop_id = sanitize_key($_POST['crop_id'] ?? '');
+
+        if (!$crop_id) {
+            wp_send_json_error(['message' => 'ID kulture nije prosleđen.']);
+        }
+
+        if (!isset($crops[$crop_id])) {
+            wp_send_json_error(['message' => 'Kultura nije pronađena.']);
+        }
+
+        unset($crops[$crop_id]);
+        update_option('agro_crops', $crops);
+
+        wp_send_json_success(['message' => 'Kultura je uspešno obrisana.']);
+    }
+
+    public function handle_ajax_bulk_delete_crops()
+    {
+        $this->require_capability();
+        check_ajax_referer('agro_admin_nonce', 'nonce');
+
+        $crops = get_option('agro_crops', []);
+        $crop_ids = isset($_POST['crop_ids']) ? (array) $_POST['crop_ids'] : [];
+
+        if (empty($crop_ids)) {
+            wp_send_json_error(['message' => 'Nije odabrana nijedna kultura.']);
+        }
+
+        $deleted_count = 0;
+        foreach ($crop_ids as $crop_id) {
+            $crop_id = sanitize_key($crop_id);
+            if (isset($crops[$crop_id])) {
+                unset($crops[$crop_id]);
+                $deleted_count++;
+            }
+        }
+
+        update_option('agro_crops', $crops);
+
+        wp_send_json_success([
+            'message' => sprintf('Uspešno obrisano %d kultura.', $deleted_count),
+            'deleted_count' => $deleted_count
+        ]);
     }
 
     private function require_capability()
