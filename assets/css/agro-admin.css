@@ -1,0 +1,104 @@
+/* Agro Admin Styles - Operations Management */
+
+.agro-bulk-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 15px;
+}
+
+#agro-bulk-delete-btn {
+    background: #dc3232;
+    color: white;
+    border-color: #dc3232;
+    padding: 6px 12px;
+    transition: all 0.2s ease;
+}
+
+#agro-bulk-delete-btn:hover {
+    background: #c62828;
+    border-color: #c62828;
+    color: white;
+}
+
+#agro-bulk-delete-btn:disabled {
+    background: #999;
+    border-color: #999;
+    cursor: not-allowed;
+}
+
+#agro-selected-count {
+    font-weight: bold;
+}
+
+/* Checkbox styling */
+#agro-operations-table .check-column {
+    vertical-align: middle;
+}
+
+#agro-operations-table th.check-column {
+    padding: 8px 10px;
+}
+
+/* Delete link styling */
+.agro-delete-operation {
+    color: #dc3232;
+    text-decoration: none;
+}
+
+.agro-delete-operation:hover {
+    color: #c62828;
+    text-decoration: underline;
+}
+
+/* Notice styles for toast notifications */
+.notice {
+    position: relative;
+    margin: 5px 0 15px;
+    padding: 12px;
+    border-left: 4px solid;
+}
+
+.notice-success {
+    border-left-color: #46b450;
+    background: #f0f9f0;
+}
+
+.notice-error {
+    border-left-color: #dc3232;
+    background: #fef7f7;
+}
+
+.notice p {
+    margin: 0.5em 0;
+    padding: 2px;
+}
+
+/* Row fade out animation */
+#agro-operations-table tbody tr {
+    transition: opacity 0.3s ease;
+}
+
+/* Loading state */
+#agro-bulk-delete-btn.loading {
+    position: relative;
+    pointer-events: none;
+}
+
+#agro-bulk-delete-btn.loading::after {
+    content: '';
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    top: 50%;
+    left: 10px;
+    margin-top: -8px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
