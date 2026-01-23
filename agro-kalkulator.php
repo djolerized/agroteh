@@ -1278,16 +1278,16 @@ class AgroKalkulator
         check_ajax_referer(self::NONCE_ACTION, 'nonce');
         $payload = isset($_POST['data']) ? wp_unslash($_POST['data']) : '';
         $data = json_decode($payload, true);
-        if (!class_exists('FPDF')) {
-            require_once __DIR__ . '/includes/fpdf.php';
-        }
+
         if (!$data) {
             wp_send_json_error('Invalid data payload');
         }
-        if (!class_exists('FPDF')) {
-            wp_send_json_error('FPDF not found');
+
+        if (!class_exists('UTF8_FPDF')) {
+            require_once __DIR__ . '/includes/utf8_fpdf.php';
         }
-        $pdf = new FPDF();
+
+        $pdf = new UTF8_FPDF();
         $pdf->SetTitle('Agro kalkulator');
         $parcels = $data['parcels'] ?? [];
         foreach ($parcels as $index => $parcel) {
