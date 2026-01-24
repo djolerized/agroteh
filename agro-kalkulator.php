@@ -41,6 +41,7 @@ class AgroKalkulator
         add_action('admin_post_agro_save_settings', [$this, 'handle_save_settings']);
         add_action('wp_ajax_agro_generate_pdf', [$this, 'handle_generate_pdf']);
         add_action('wp_ajax_nopriv_agro_generate_pdf', [$this, 'handle_generate_pdf']);
+        add_action('rest_api_init', [$this, 'register_rest_api']);
         register_activation_hook(__FILE__, [$this, 'activate']);
     }
 
@@ -51,6 +52,85 @@ class AgroKalkulator
         $this->maybe_seed_option('agro_operations', $this->default_operations());
         $this->maybe_seed_option('agro_crops', $this->default_crops());
         $this->maybe_seed_option('agro_eur_rate', 117);
+    }
+
+    public function register_rest_api()
+    {
+        register_rest_route('agro/v1', '/parcele', [
+            'methods' => 'GET',
+            'callback' => [$this, 'handle_get_parcele'],
+            'permission_callback' => '__return_true',
+            'args' => [
+                'opstina' => [
+                    'required' => true,
+                    'type' => 'string',
+                    'sanitize_callback' => 'sanitize_file_name',
+                ],
+            ],
+        ]);
+
+        register_rest_route('agro/v1', '/opstine', [
+            'methods' => 'GET',
+            'callback' => [$this, 'handle_get_opstine'],
+            'permission_callback' => '__return_true',
+        ]);
+    }
+
+    public function handle_get_parcele($request)
+    {
+        $opstina = $request->get_param('opstina');
+
+        if (empty($opstina)) {
+            return new WP_Error('missing_param', 'Parametar opstina je obavezan.', ['status' => 400]);
+        }
+
+        $data_dir = plugin_dir_path(__FILE__) . 'data/';
+
+        if (!is_dir($data_dir)) {
+            return new WP_Error('data_dir_missing', 'Data direktorijum ne postoji.', ['status' => 500]);
+        }
+
+        $geojson_file = $data_dir . sanitize_file_name($opstina) . '.geojson';
+
+        if (!file_exists($geojson_file)) {
+            return new WP_Error('file_not_found', 'GeoJSON fajl za opštinu "' . esc_html($opstina) . '" nije pronađen.', ['status' => 404]);
+        }
+
+        $content = file_get_contents($geojson_file);
+
+        if ($content === false) {
+            return new WP_Error('read_error', 'Greška pri čitanju GeoJSON fajla.', ['status' => 500]);
+        }
+
+        $geojson = json_decode($content, true);
+
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            return new WP_Error('json_error', 'Greška pri parsiranju GeoJSON fajla: ' . json_last_error_msg(), ['status' => 500]);
+        }
+
+        return rest_ensure_response($geojson);
+    }
+
+    public function handle_get_opstine($request)
+    {
+        $data_dir = plugin_dir_path(__FILE__) . 'data/';
+
+        if (!is_dir($data_dir)) {
+            return rest_ensure_response(['opstine' => []]);
+        }
+
+        $files = glob($data_dir . '*.geojson');
+        $opstine = [];
+
+        foreach ($files as $file) {
+            $filename = basename($file, '.geojson');
+            $opstine[] = [
+                'value' => $filename,
+                'label' => ucfirst(str_replace('_', ' ', $filename)),
+            ];
+        }
+
+        return rest_ensure_response(['opstine' => $opstine]);
     }
 
     private function maybe_seed_option($key, $value)
@@ -225,7 +305,9 @@ class AgroKalkulator
 
         wp_localize_script('agro-kalkulator', 'agroKalkulatorData', [
             'ajaxUrl' => admin_url('admin-ajax.php'),
+            'restUrl' => rest_url('agro/v1/'),
             'nonce' => wp_create_nonce(self::NONCE_ACTION),
+            'restNonce' => wp_create_nonce('wp_rest'),
             'fuels' => array_values($fuels),
             'tractors' => array_values($tractors),
             'operations' => array_values($operations),
@@ -290,9 +372,21 @@ class AgroKalkulator
                             <span>Način unosa površine</span>
                             <div class="agro-radio-group">
                                 <label><input type="radio" name="agro-area-mode" value="map" checked> Iscrtaj parcelu na mapi</label>
+                                <label><input type="radio" name="agro-area-mode" value="cadastral"> Odaberi katastarsku parcelu</label>
                                 <label><input type="radio" name="agro-area-mode" value="manual"> Ručni unos površine</label>
                             </div>
                         </label>
+                        <div id="agro-cadastral-controls" class="agro-cadastral-controls" style="display: none;">
+                            <label>
+                                <span>Katastarska opština</span>
+                                <select id="agro-katastarska-opstina">
+                                    <option value="">-- Odaberi katastarsku opštinu --</option>
+                                    <option value="lapovo">Lapovo</option>
+                                </select>
+                            </label>
+                            <div id="agro-cadastral-info" class="agro-cadastral-info"></div>
+                            <button type="button" id="agro-clear-cadastral" class="button agro-clear-cadastral" style="display: none;">Obriši odabranu parcelu</button>
+                        </div>
                         <label>
                             <span>Površina parcele (ha)</span>
                             <input type="number" id="agro-area" step="0.0001" min="0" readonly>
