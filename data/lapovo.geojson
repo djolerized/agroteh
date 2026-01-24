@@ -1,0 +1,59 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "brparcele": "1234/1",
+        "povrsina": 25000,
+        "kat_opst_1": "Lapovo"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [7508000, 4894000],
+          [7508200, 4894000],
+          [7508200, 4894200],
+          [7508000, 4894200],
+          [7508000, 4894000]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "brparcele": "1235/2",
+        "povrsina": 35000,
+        "kat_opst_1": "Lapovo"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [7508250, 4894000],
+          [7508500, 4894000],
+          [7508500, 4894250],
+          [7508250, 4894250],
+          [7508250, 4894000]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "brparcele": "1236/3",
+        "povrsina": 18500,
+        "kat_opst_1": "Lapovo"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [7508000, 4894250],
+          [7508180, 4894250],
+          [7508180, 4894400],
+          [7508000, 4894400],
+          [7508000, 4894250]
+        ]]
+      }
+    }
+  ]
+}

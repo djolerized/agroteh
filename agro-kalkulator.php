@@ -294,8 +294,9 @@ class AgroKalkulator
         wp_register_script('leaflet', 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js', [], '1.9.4', true);
         wp_register_style('leaflet-draw', 'https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css', [], '1.0.4');
         wp_register_script('leaflet-draw', 'https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js', ['leaflet'], '1.0.4', true);
+        wp_register_script('proj4', 'https://unpkg.com/proj4@2.9.2/dist/proj4.js', [], '2.9.2', true);
         wp_register_style('agro-kalkulator', $plugin_url . 'assets/css/agro-kalkulator.css', [], self::VERSION);
-        wp_register_script('agro-kalkulator', $plugin_url . 'assets/js/agro-kalkulator.js', ['leaflet', 'leaflet-draw'], self::VERSION, true);
+        wp_register_script('agro-kalkulator', $plugin_url . 'assets/js/agro-kalkulator.js', ['leaflet', 'leaflet-draw', 'proj4'], self::VERSION, true);
 
         $fuels = get_option('agro_fuels', []);
         $tractors = get_option('agro_tractors', []);
@@ -345,6 +346,7 @@ class AgroKalkulator
         wp_enqueue_style('agro-kalkulator');
         wp_enqueue_script('leaflet');
         wp_enqueue_script('leaflet-draw');
+        wp_enqueue_script('proj4');
         wp_enqueue_script('agro-kalkulator');
 
         ob_start();
