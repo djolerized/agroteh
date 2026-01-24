@@ -57,6 +57,11 @@
             yieldPerHa: 0,
             pricePerKg: 0,
             result: null,
+            // Cadastral data
+            cadastralOpstina: '',
+            cadastralParcelId: '',
+            cadastralParcelNumber: '',
+            cadastralPolygon: [],
         };
     }
 
@@ -87,6 +92,11 @@
         reset: document.getElementById('agro-reset'),
         pdf: document.getElementById('agro-generate-pdf'),
         currencyRadios: document.querySelectorAll('input[name="agro-currency"]'),
+        // Cadastral elements
+        cadastralControls: document.getElementById('agro-cadastral-controls'),
+        cadastralOpstina: document.getElementById('agro-katastarska-opstina'),
+        cadastralInfo: document.getElementById('agro-cadastral-info'),
+        clearCadastral: document.getElementById('agro-clear-cadastral'),
     };
 
     function formatNumber(value) {
@@ -140,6 +150,11 @@
 
     // Leaflet map
     let map, drawnItems;
+
+    // Cadastral (katastarske) parcels
+    let cadastralLayer = null;
+    let selectedCadastralParcel = null;
+    let cadastralLoadingState = false;
     function initMap() {
         const mapEl = document.getElementById('agro-map');
         map = L.map(mapEl).setView([44.7872, 20.4573], 7);
@@ -201,6 +216,13 @@
 
     function applyAreaModeUI(mode) {
         const mapEl = document.getElementById('agro-map');
+        const drawControl = map ? map._controlContainer.querySelector('.leaflet-draw') : null;
+
+        // Hide cadastral controls by default
+        if (els.cadastralControls) {
+            els.cadastralControls.style.display = 'none';
+        }
+
         if (mode === 'manual') {
             if (els.area) {
                 els.area.removeAttribute('readonly');
@@ -208,7 +230,9 @@
             if (mapEl) {
                 mapEl.style.display = 'none';
             }
-        } else {
+            // Clear cadastral layers when switching to manual
+            clearCadastralLayer();
+        } else if (mode === 'cadastral') {
             if (els.area) {
                 els.area.setAttribute('readonly', 'readonly');
             }
@@ -218,6 +242,35 @@
                     setTimeout(() => map.invalidateSize(), 50);
                 }
             }
+            // Show cadastral controls
+            if (els.cadastralControls) {
+                els.cadastralControls.style.display = 'block';
+            }
+            // Hide draw control in cadastral mode
+            if (drawControl) {
+                drawControl.style.display = 'none';
+            }
+            // Clear drawn items
+            if (drawnItems) {
+                drawnItems.clearLayers();
+            }
+        } else {
+            // Map mode (drawing)
+            if (els.area) {
+                els.area.setAttribute('readonly', 'readonly');
+            }
+            if (mapEl) {
+                mapEl.style.display = 'block';
+                if (map) {
+                    setTimeout(() => map.invalidateSize(), 50);
+                }
+            }
+            // Show draw control in map mode
+            if (drawControl) {
+                drawControl.style.display = 'block';
+            }
+            // Clear cadastral layers when switching to map mode
+            clearCadastralLayer();
         }
     }
 
@@ -243,6 +296,24 @@
         if (!parcel || !drawnItems) return;
         applyAreaModeUI(parcel.areaMode || 'map');
         drawnItems.clearLayers();
+
+        // Handle cadastral mode
+        if (parcel.areaMode === 'cadastral') {
+            // Restore cadastral opština selection
+            if (els.cadastralOpstina) {
+                els.cadastralOpstina.value = parcel.cadastralOpstina || '';
+            }
+            // If there's a saved cadastral polygon, restore it
+            if (parcel.cadastralPolygon && parcel.cadastralPolygon.length) {
+                // Load cadastral parcels if opština is selected
+                if (parcel.cadastralOpstina) {
+                    loadCadastralParcels(parcel.cadastralOpstina, parcel.cadastralParcelId);
+                }
+            }
+            setAreaDisplayValue(parcel.fieldAreaHa || '');
+            return;
+        }
+
         if (parcel.polygon && parcel.polygon.length) {
             const shape = restorePolygon(parcel.polygon);
             if (shape) {
@@ -253,6 +324,290 @@
             }
         }
         setAreaDisplayValue(parcel.fieldAreaHa || '');
+    }
+
+    // ==========================================
+    // CADASTRAL PARCELS FUNCTIONALITY
+    // ==========================================
+
+    const cadastralStyles = {
+        default: {
+            color: '#0066ff',
+            weight: 2,
+            fillColor: '#0066ff',
+            fillOpacity: 0.1,
+        },
+        hover: {
+            color: '#0066ff',
+            weight: 3,
+            fillColor: '#0066ff',
+            fillOpacity: 0.3,
+        },
+        selected: {
+            color: '#ffcc00',
+            weight: 3,
+            fillColor: '#ffcc00',
+            fillOpacity: 0.5,
+        },
+    };
+
+    function clearCadastralLayer() {
+        if (cadastralLayer && map) {
+            map.removeLayer(cadastralLayer);
+            cadastralLayer = null;
+        }
+        selectedCadastralParcel = null;
+        if (els.clearCadastral) {
+            els.clearCadastral.style.display = 'none';
+        }
+        if (els.cadastralInfo) {
+            els.cadastralInfo.innerHTML = '';
+        }
+    }
+
+    function loadCadastralParcels(opstina, preselectedParcelId = null) {
+        if (!opstina || cadastralLoadingState) return;
+
+        cadastralLoadingState = true;
+        clearCadastralLayer();
+
+        if (els.cadastralInfo) {
+            els.cadastralInfo.innerHTML = '<span class="agro-loading-text">Učitavanje katastarskih parcela...</span>';
+        }
+
+        const url = data.restUrl + 'parcele?opstina=' + encodeURIComponent(opstina);
+
+        fetch(url, {
+            method: 'GET',
+            headers: {
+                'X-WP-Nonce': data.restNonce,
+            },
+        })
+        .then(response => {
+            if (!response.ok) {
+                return response.json().then(err => {
+                    throw new Error(err.message || 'Greška pri učitavanju podataka');
+                });
+            }
+            return response.json();
+        })
+        .then(geojson => {
+            cadastralLoadingState = false;
+
+            if (!geojson || !geojson.features || !geojson.features.length) {
+                if (els.cadastralInfo) {
+                    els.cadastralInfo.innerHTML = '<span class="agro-cadastral-error">Nema parcela za odabranu opštinu.</span>';
+                }
+                return;
+            }
+
+            // Create GeoJSON layer
+            cadastralLayer = L.geoJSON(geojson, {
+                style: function(feature) {
+                    return cadastralStyles.default;
+                },
+                onEachFeature: function(feature, layer) {
+                    // Add hover effects
+                    layer.on('mouseover', function(e) {
+                        if (selectedCadastralParcel !== layer) {
+                            layer.setStyle(cadastralStyles.hover);
+                        }
+                    });
+                    layer.on('mouseout', function(e) {
+                        if (selectedCadastralParcel !== layer) {
+                            layer.setStyle(cadastralStyles.default);
+                        }
+                    });
+
+                    // Add click handler
+                    layer.on('click', function(e) {
+                        selectCadastralParcel(feature, layer);
+                    });
+
+                    // Add tooltip with parcel info
+                    const props = feature.properties || {};
+                    const tooltipContent = `Parcela: ${props.brparcele || 'N/A'}<br>Površina: ${formatAreaForDisplay(props.povrsina)} ha`;
+                    layer.bindTooltip(tooltipContent, {
+                        permanent: false,
+                        direction: 'top',
+                        className: 'agro-cadastral-tooltip',
+                    });
+                },
+            });
+
+            cadastralLayer.addTo(map);
+
+            // Fit map to cadastral layer bounds
+            const bounds = cadastralLayer.getBounds();
+            if (bounds.isValid()) {
+                map.fitBounds(bounds);
+            }
+
+            const featureCount = geojson.features.length;
+            if (els.cadastralInfo) {
+                els.cadastralInfo.innerHTML = `<span class="agro-cadastral-success">Učitano ${featureCount} parcela. Kliknite na parcelu da je odaberete.</span>`;
+            }
+
+            // If there's a preselected parcel, select it
+            if (preselectedParcelId) {
+                cadastralLayer.eachLayer(function(layer) {
+                    const props = layer.feature.properties || {};
+                    if (props.brparcele === preselectedParcelId) {
+                        selectCadastralParcel(layer.feature, layer, false);
+                    }
+                });
+            }
+        })
+        .catch(error => {
+            cadastralLoadingState = false;
+            console.error('Error loading cadastral data:', error);
+            if (els.cadastralInfo) {
+                els.cadastralInfo.innerHTML = `<span class="agro-cadastral-error">Greška: ${error.message}</span>`;
+            }
+            showToast('Greška pri učitavanju katastarskih podataka: ' + error.message, 'error');
+        });
+    }
+
+    function formatAreaForDisplay(areaM2) {
+        if (!areaM2) return '0';
+        const areaHa = parseFloat(areaM2) / 10000;
+        return areaHa.toFixed(4);
+    }
+
+    function selectCadastralParcel(feature, layer, showNotification = true) {
+        // Reset previous selection
+        if (selectedCadastralParcel) {
+            selectedCadastralParcel.setStyle(cadastralStyles.default);
+        }
+
+        // Set new selection
+        selectedCadastralParcel = layer;
+        layer.setStyle(cadastralStyles.selected);
+
+        const props = feature.properties || {};
+        const areaM2 = parseFloat(props.povrsina) || 0;
+        const areaHa = areaM2 / 10000;
+
+        // Update parcel data
+        const parcel = getActiveParcel();
+        if (parcel) {
+            parcel.fieldAreaHa = parseFloat(areaHa.toFixed(4));
+            parcel.cadastralParcelId = props.brparcele || '';
+            parcel.cadastralParcelNumber = props.brparcele || '';
+            parcel.cadastralOpstina = els.cadastralOpstina ? els.cadastralOpstina.value : '';
+
+            // Save the polygon coordinates for later restoration
+            if (feature.geometry && feature.geometry.coordinates) {
+                parcel.cadastralPolygon = feature.geometry.coordinates;
+            }
+        }
+
+        // Update area display
+        setAreaDisplayValue(areaHa.toFixed(4));
+
+        // Show clear button
+        if (els.clearCadastral) {
+            els.clearCadastral.style.display = 'inline-block';
+        }
+
+        // Update info display
+        if (els.cadastralInfo) {
+            const opstinaName = props.kat_opst_1 || els.cadastralOpstina?.value || '';
+            els.cadastralInfo.innerHTML = `
+                <div class="agro-cadastral-selected">
+                    <strong>Odabrana parcela:</strong><br>
+                    Broj parcele: ${props.brparcele || 'N/A'}<br>
+                    Opština: ${opstinaName}<br>
+                    Površina: ${areaHa.toFixed(4)} ha (${formatNumber(areaM2)} m²)
+                </div>
+            `;
+        }
+
+        // Fit map to selected parcel
+        map.fitBounds(layer.getBounds(), { padding: [50, 50] });
+
+        if (showNotification) {
+            showToast(`Odabrana parcela ${props.brparcele || ''} - ${areaHa.toFixed(4)} ha`, 'success');
+        }
+    }
+
+    function clearCadastralSelection() {
+        const parcel = getActiveParcel();
+
+        // Reset visual selection
+        if (selectedCadastralParcel) {
+            selectedCadastralParcel.setStyle(cadastralStyles.default);
+            selectedCadastralParcel = null;
+        }
+
+        // Clear parcel cadastral data
+        if (parcel) {
+            parcel.fieldAreaHa = 0;
+            parcel.cadastralParcelId = '';
+            parcel.cadastralParcelNumber = '';
+            parcel.cadastralPolygon = [];
+        }
+
+        // Clear area display
+        setAreaDisplayValue('');
+
+        // Hide clear button
+        if (els.clearCadastral) {
+            els.clearCadastral.style.display = 'none';
+        }
+
+        // Update info
+        if (els.cadastralInfo && cadastralLayer) {
+            const featureCount = cadastralLayer.getLayers().length;
+            els.cadastralInfo.innerHTML = `<span class="agro-cadastral-success">Učitano ${featureCount} parcela. Kliknite na parcelu da je odaberete.</span>`;
+        }
+
+        // Fit map to all parcels
+        if (cadastralLayer) {
+            const bounds = cadastralLayer.getBounds();
+            if (bounds.isValid()) {
+                map.fitBounds(bounds);
+            }
+        }
+
+        showToast('Selekcija parcele je obrisana', 'info');
+    }
+
+    function initCadastralEvents() {
+        // Handle opština selection change
+        if (els.cadastralOpstina) {
+            els.cadastralOpstina.addEventListener('change', function() {
+                const opstina = this.value;
+                const parcel = getActiveParcel();
+
+                if (parcel) {
+                    parcel.cadastralOpstina = opstina;
+                    parcel.cadastralParcelId = '';
+                    parcel.cadastralParcelNumber = '';
+                    parcel.cadastralPolygon = [];
+                    parcel.fieldAreaHa = 0;
+                }
+
+                setAreaDisplayValue('');
+
+                if (opstina) {
+                    loadCadastralParcels(opstina);
+                } else {
+                    clearCadastralLayer();
+                    if (els.cadastralInfo) {
+                        els.cadastralInfo.innerHTML = '';
+                    }
+                }
+            });
+        }
+
+        // Handle clear cadastral button
+        if (els.clearCadastral) {
+            els.clearCadastral.addEventListener('click', function(e) {
+                e.preventDefault();
+                clearCadastralSelection();
+            });
+        }
     }
 
     function ensureOperationRow() {
@@ -447,6 +802,10 @@
         if (parcel.areaMode === 'manual') {
             parcel.manualAreaHa = parseNumber(els.area.value);
             parcel.fieldAreaHa = parcel.manualAreaHa;
+        } else if (parcel.areaMode === 'cadastral') {
+            // For cadastral mode, area is already set when parcel is selected
+            parcel.cadastralOpstina = els.cadastralOpstina ? els.cadastralOpstina.value : '';
+            // fieldAreaHa is already set by selectCadastralParcel
         } else {
             parcel.fieldAreaHa = parseNumber(els.area.value);
         }
@@ -467,6 +826,18 @@
         els.areaModeRadios.forEach(radio => {
             radio.checked = radio.value === areaMode;
         });
+
+        // Handle cadastral mode restoration
+        if (areaMode === 'cadastral') {
+            if (els.cadastralOpstina) {
+                els.cadastralOpstina.value = parcel.cadastralOpstina || '';
+            }
+            // Load cadastral parcels if opština is selected
+            if (parcel.cadastralOpstina) {
+                loadCadastralParcels(parcel.cadastralOpstina, parcel.cadastralParcelId);
+            }
+        }
+
         const yieldInput = document.getElementById('agro-yield-per-ha');
         const priceInput = document.getElementById('agro-price-per-kg');
         yieldInput.value = parcel.yieldPerHa || '';
@@ -842,7 +1213,32 @@
                 if (mode === 'manual') {
                     parcel.manualAreaHa = parseNumber(els.area.value);
                     parcel.fieldAreaHa = parcel.manualAreaHa;
+                    // Clear cadastral data when switching to manual
+                    parcel.cadastralOpstina = '';
+                    parcel.cadastralParcelId = '';
+                    parcel.cadastralParcelNumber = '';
+                    parcel.cadastralPolygon = [];
+                } else if (mode === 'cadastral') {
+                    // Clear drawn polygon when switching to cadastral
+                    parcel.polygon = [];
+                    parcel.fieldAreaHa = 0;
+                    setAreaDisplayValue('');
+                    if (drawnItems) {
+                        drawnItems.clearLayers();
+                    }
+                    // Restore cadastral opština if previously selected
+                    if (els.cadastralOpstina) {
+                        els.cadastralOpstina.value = parcel.cadastralOpstina || '';
+                        if (parcel.cadastralOpstina) {
+                            loadCadastralParcels(parcel.cadastralOpstina, parcel.cadastralParcelId);
+                        }
+                    }
                 } else {
+                    // Map mode - clear cadastral data
+                    parcel.cadastralOpstina = '';
+                    parcel.cadastralParcelId = '';
+                    parcel.cadastralParcelNumber = '';
+                    parcel.cadastralPolygon = [];
                     parcel.fieldAreaHa = 0;
                     setAreaDisplayValue('');
                     renderActiveParcelGeometry();
@@ -875,5 +1271,6 @@
         ensureOperationRow();
         loadParcelToForm(getActiveParcel());
         initEvents();
+        initCadastralEvents();
     });
 })();
