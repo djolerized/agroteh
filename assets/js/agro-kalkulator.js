@@ -155,6 +155,93 @@
     let cadastralLayer = null;
     let selectedCadastralParcel = null;
     let cadastralLoadingState = false;
+
+    // Define Serbian cadastral coordinate system (MGI 1901 / Balkans Zone 7 - EPSG:6316)
+    // Also known as MGI / Balkans zone 7 (EPSG:31277)
+    if (typeof proj4 !== 'undefined') {
+        proj4.defs('EPSG:6316', '+proj=tmerc +lat_0=0 +lon_0=21 +k=0.9999 +x_0=7500000 +y_0=0 +ellps=bessel +towgs84=682,-203,480,0,0,0,0 +units=m +no_defs');
+        proj4.defs('EPSG:31277', '+proj=tmerc +lat_0=0 +lon_0=21 +k=0.9999 +x_0=7500000 +y_0=0 +ellps=bessel +towgs84=682,-203,480,0,0,0,0 +units=m +no_defs');
+    }
+
+    // Check if coordinates need transformation (not in WGS84 range)
+    function needsCoordinateTransformation(geojson) {
+        if (!geojson || !geojson.features || !geojson.features.length) return false;
+
+        const firstFeature = geojson.features[0];
+        if (!firstFeature.geometry || !firstFeature.geometry.coordinates) return false;
+
+        // Get first coordinate pair
+        let coords = firstFeature.geometry.coordinates;
+        while (Array.isArray(coords[0]) && Array.isArray(coords[0][0])) {
+            coords = coords[0];
+        }
+        if (Array.isArray(coords[0])) {
+            coords = coords[0];
+        }
+
+        const x = coords[0];
+        const y = coords[1];
+
+        // WGS84 valid ranges: longitude -180 to 180, latitude -90 to 90
+        // Serbian cadastral system uses coordinates like x=7500000, y=4900000
+        // If x > 180 or y > 90, coordinates are in a projected system
+        return Math.abs(x) > 180 || Math.abs(y) > 90;
+    }
+
+    // Transform GeoJSON coordinates from Serbian cadastral system to WGS84
+    function transformGeoJsonToWgs84(geojson) {
+        if (typeof proj4 === 'undefined') {
+            console.warn('proj4 library not loaded, cannot transform coordinates');
+            return geojson;
+        }
+
+        const transformCoord = (coord) => {
+            // Input: [x, y] in MGI Balkans Zone 7
+            // Output: [lng, lat] in WGS84
+            const result = proj4('EPSG:6316', 'EPSG:4326', [coord[0], coord[1]]);
+            return result;
+        };
+
+        const transformCoordinates = (coords, depth) => {
+            if (depth === 0) {
+                return transformCoord(coords);
+            }
+            return coords.map(c => transformCoordinates(c, depth - 1));
+        };
+
+        const getCoordinateDepth = (coords) => {
+            let depth = 0;
+            let current = coords;
+            while (Array.isArray(current) && Array.isArray(current[0])) {
+                depth++;
+                current = current[0];
+            }
+            return depth;
+        };
+
+        const transformedFeatures = geojson.features.map(feature => {
+            if (!feature.geometry || !feature.geometry.coordinates) {
+                return feature;
+            }
+
+            const coords = feature.geometry.coordinates;
+            const depth = getCoordinateDepth(coords);
+
+            return {
+                ...feature,
+                geometry: {
+                    ...feature.geometry,
+                    coordinates: transformCoordinates(coords, depth)
+                }
+            };
+        });
+
+        return {
+            ...geojson,
+            features: transformedFeatures
+        };
+    }
+
     function initMap() {
         const mapEl = document.getElementById('agro-map');
         map = L.map(mapEl).setView([44.7872, 20.4573], 7);
@@ -401,8 +488,14 @@
                 return;
             }
 
+            // Transform coordinates from Serbian cadastral system to WGS84 if needed
+            let processedGeoJson = geojson;
+            if (needsCoordinateTransformation(geojson)) {
+                processedGeoJson = transformGeoJsonToWgs84(geojson);
+            }
+
             // Create GeoJSON layer
-            cadastralLayer = L.geoJSON(geojson, {
+            cadastralLayer = L.geoJSON(processedGeoJson, {
                 style: function(feature) {
                     return cadastralStyles.default;
                 },
