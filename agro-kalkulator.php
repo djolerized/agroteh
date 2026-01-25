@@ -52,6 +52,30 @@ class AgroKalkulator
         $this->maybe_seed_option('agro_operations', $this->default_operations());
         $this->maybe_seed_option('agro_crops', $this->default_crops());
         $this->maybe_seed_option('agro_eur_rate', 117);
+        $this->create_parcels_table();
+    }
+
+    private function create_parcels_table()
+    {
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'agro_parcels';
+        $charset_collate = $wpdb->get_charset_collate();
+
+        $sql = "CREATE TABLE $table_name (
+            id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            user_id BIGINT UNSIGNED NOT NULL,
+            name VARCHAR(255) NOT NULL,
+            geojson LONGTEXT NOT NULL,
+            area_ha DECIMAL(10,4) NOT NULL,
+            cadastral_id VARCHAR(100) NULL,
+            cadastral_municipality VARCHAR(100) NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            INDEX idx_user_id (user_id)
+        ) $charset_collate;";
+
+        require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
+        dbDelta($sql);
     }
 
     public function register_rest_api()
@@ -73,6 +97,280 @@ class AgroKalkulator
             'methods' => 'GET',
             'callback' => [$this, 'handle_get_opstine'],
             'permission_callback' => '__return_true',
+        ]);
+
+        // User parcels endpoints
+        register_rest_route('agro/v1', '/parcels', [
+            [
+                'methods' => 'GET',
+                'callback' => [$this, 'handle_get_user_parcels'],
+                'permission_callback' => [$this, 'check_user_logged_in'],
+            ],
+            [
+                'methods' => 'POST',
+                'callback' => [$this, 'handle_create_parcel'],
+                'permission_callback' => [$this, 'check_user_logged_in'],
+            ],
+        ]);
+
+        register_rest_route('agro/v1', '/parcels/(?P<id>\d+)', [
+            [
+                'methods' => 'GET',
+                'callback' => [$this, 'handle_get_single_parcel'],
+                'permission_callback' => [$this, 'check_user_logged_in'],
+                'args' => [
+                    'id' => [
+                        'validate_callback' => function($param) {
+                            return is_numeric($param);
+                        }
+                    ],
+                ],
+            ],
+            [
+                'methods' => 'PUT',
+                'callback' => [$this, 'handle_update_parcel'],
+                'permission_callback' => [$this, 'check_user_logged_in'],
+                'args' => [
+                    'id' => [
+                        'validate_callback' => function($param) {
+                            return is_numeric($param);
+                        }
+                    ],
+                ],
+            ],
+            [
+                'methods' => 'DELETE',
+                'callback' => [$this, 'handle_delete_parcel'],
+                'permission_callback' => [$this, 'check_user_logged_in'],
+                'args' => [
+                    'id' => [
+                        'validate_callback' => function($param) {
+                            return is_numeric($param);
+                        }
+                    ],
+                ],
+            ],
+        ]);
+    }
+
+    public function check_user_logged_in()
+    {
+        return is_user_logged_in();
+    }
+
+    public function handle_get_user_parcels($request)
+    {
+        global $wpdb;
+        $user_id = get_current_user_id();
+        $table_name = $wpdb->prefix . 'agro_parcels';
+
+        $parcels = $wpdb->get_results($wpdb->prepare(
+            "SELECT id, name, area_ha, cadastral_id, cadastral_municipality, created_at
+             FROM $table_name
+             WHERE user_id = %d
+             ORDER BY created_at DESC",
+            $user_id
+        ), ARRAY_A);
+
+        if ($parcels === null) {
+            return new WP_Error('db_error', 'Greška pri čitanju iz baze.', ['status' => 500]);
+        }
+
+        return rest_ensure_response($parcels);
+    }
+
+    public function handle_get_single_parcel($request)
+    {
+        global $wpdb;
+        $user_id = get_current_user_id();
+        $parcel_id = (int) $request['id'];
+        $table_name = $wpdb->prefix . 'agro_parcels';
+
+        $parcel = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM $table_name WHERE id = %d AND user_id = %d",
+            $parcel_id,
+            $user_id
+        ), ARRAY_A);
+
+        if (!$parcel) {
+            return new WP_Error('not_found', 'Parcela nije pronađena.', ['status' => 404]);
+        }
+
+        // Decode GeoJSON
+        $parcel['geojson'] = json_decode($parcel['geojson'], true);
+
+        return rest_ensure_response($parcel);
+    }
+
+    public function handle_create_parcel($request)
+    {
+        global $wpdb;
+        $user_id = get_current_user_id();
+        $table_name = $wpdb->prefix . 'agro_parcels';
+
+        $params = $request->get_json_params();
+
+        // Validate required fields
+        $name = isset($params['name']) ? sanitize_text_field($params['name']) : '';
+        $geojson = isset($params['geojson']) ? $params['geojson'] : null;
+        $area_ha = isset($params['area_ha']) ? floatval($params['area_ha']) : 0;
+
+        if (empty($name)) {
+            return new WP_Error('invalid_name', 'Naziv parcele je obavezan.', ['status' => 400]);
+        }
+
+        if (empty($geojson)) {
+            return new WP_Error('invalid_geojson', 'GeoJSON geometrija je obavezna.', ['status' => 400]);
+        }
+
+        if ($area_ha <= 0) {
+            return new WP_Error('invalid_area', 'Površina mora biti veća od 0.', ['status' => 400]);
+        }
+
+        // Validate GeoJSON structure
+        if (!is_array($geojson) || !isset($geojson['type'])) {
+            return new WP_Error('invalid_geojson', 'GeoJSON format nije validan.', ['status' => 400]);
+        }
+
+        $cadastral_id = isset($params['cadastral_id']) ? sanitize_text_field($params['cadastral_id']) : null;
+        $cadastral_municipality = isset($params['cadastral_municipality']) ? sanitize_text_field($params['cadastral_municipality']) : null;
+
+        $result = $wpdb->insert(
+            $table_name,
+            [
+                'user_id' => $user_id,
+                'name' => $name,
+                'geojson' => wp_json_encode($geojson),
+                'area_ha' => $area_ha,
+                'cadastral_id' => $cadastral_id,
+                'cadastral_municipality' => $cadastral_municipality,
+            ],
+            ['%d', '%s', '%s', '%f', '%s', '%s']
+        );
+
+        if ($result === false) {
+            return new WP_Error('db_error', 'Greška pri čuvanju parcele.', ['status' => 500]);
+        }
+
+        $new_id = $wpdb->insert_id;
+
+        return rest_ensure_response([
+            'id' => $new_id,
+            'message' => 'Parcela je uspešno sačuvana.',
+        ]);
+    }
+
+    public function handle_update_parcel($request)
+    {
+        global $wpdb;
+        $user_id = get_current_user_id();
+        $parcel_id = (int) $request['id'];
+        $table_name = $wpdb->prefix . 'agro_parcels';
+
+        // Check ownership
+        $existing = $wpdb->get_row($wpdb->prepare(
+            "SELECT id FROM $table_name WHERE id = %d AND user_id = %d",
+            $parcel_id,
+            $user_id
+        ));
+
+        if (!$existing) {
+            return new WP_Error('not_found', 'Parcela nije pronađena ili nemate dozvolu.', ['status' => 404]);
+        }
+
+        $params = $request->get_json_params();
+
+        $update_data = [];
+        $update_format = [];
+
+        if (isset($params['name'])) {
+            $name = sanitize_text_field($params['name']);
+            if (empty($name)) {
+                return new WP_Error('invalid_name', 'Naziv parcele ne može biti prazan.', ['status' => 400]);
+            }
+            $update_data['name'] = $name;
+            $update_format[] = '%s';
+        }
+
+        if (isset($params['geojson'])) {
+            $geojson = $params['geojson'];
+            if (!is_array($geojson) || !isset($geojson['type'])) {
+                return new WP_Error('invalid_geojson', 'GeoJSON format nije validan.', ['status' => 400]);
+            }
+            $update_data['geojson'] = wp_json_encode($geojson);
+            $update_format[] = '%s';
+        }
+
+        if (isset($params['area_ha'])) {
+            $area_ha = floatval($params['area_ha']);
+            if ($area_ha <= 0) {
+                return new WP_Error('invalid_area', 'Površina mora biti veća od 0.', ['status' => 400]);
+            }
+            $update_data['area_ha'] = $area_ha;
+            $update_format[] = '%f';
+        }
+
+        if (isset($params['cadastral_id'])) {
+            $update_data['cadastral_id'] = sanitize_text_field($params['cadastral_id']);
+            $update_format[] = '%s';
+        }
+
+        if (isset($params['cadastral_municipality'])) {
+            $update_data['cadastral_municipality'] = sanitize_text_field($params['cadastral_municipality']);
+            $update_format[] = '%s';
+        }
+
+        if (empty($update_data)) {
+            return new WP_Error('no_data', 'Nema podataka za ažuriranje.', ['status' => 400]);
+        }
+
+        $result = $wpdb->update(
+            $table_name,
+            $update_data,
+            ['id' => $parcel_id],
+            $update_format,
+            ['%d']
+        );
+
+        if ($result === false) {
+            return new WP_Error('db_error', 'Greška pri ažuriranju parcele.', ['status' => 500]);
+        }
+
+        return rest_ensure_response([
+            'message' => 'Parcela je uspešno ažurirana.',
+        ]);
+    }
+
+    public function handle_delete_parcel($request)
+    {
+        global $wpdb;
+        $user_id = get_current_user_id();
+        $parcel_id = (int) $request['id'];
+        $table_name = $wpdb->prefix . 'agro_parcels';
+
+        // Check ownership
+        $existing = $wpdb->get_row($wpdb->prepare(
+            "SELECT id FROM $table_name WHERE id = %d AND user_id = %d",
+            $parcel_id,
+            $user_id
+        ));
+
+        if (!$existing) {
+            return new WP_Error('not_found', 'Parcela nije pronađena ili nemate dozvolu.', ['status' => 404]);
+        }
+
+        $result = $wpdb->delete(
+            $table_name,
+            ['id' => $parcel_id, 'user_id' => $user_id],
+            ['%d', '%d']
+        );
+
+        if ($result === false) {
+            return new WP_Error('db_error', 'Greška pri brisanju parcele.', ['status' => 500]);
+        }
+
+        return rest_ensure_response([
+            'message' => 'Parcela je uspešno obrisana.',
         ]);
     }
 
@@ -313,6 +611,9 @@ class AgroKalkulator
             'operations' => array_values($operations),
             'crops' => array_values($crops),
             'eurRate' => (float)$eur_rate,
+            'isLoggedIn' => is_user_logged_in(),
+            'loginUrl' => wp_login_url(get_permalink()),
+            'registerUrl' => wp_registration_url(),
         ]);
     }
 
@@ -351,6 +652,63 @@ class AgroKalkulator
         ?>
         <div class="agro-wrapper">
             <h2>Agro kalkulator</h2>
+
+            <!-- Moje Parcele Section -->
+            <div class="agro-card agro-my-parcels-card" id="agro-my-parcels-section">
+                <div class="agro-my-parcels-header">
+                    <h3>Moje Parcele</h3>
+                    <button type="button" class="button button-primary agro-add-parcel-btn" id="agro-add-parcel-btn" title="Dodaj novu parcelu">+</button>
+                </div>
+                <div id="agro-my-parcels-list" class="agro-my-parcels-list">
+                    <!-- Parcels will be loaded here via JavaScript -->
+                </div>
+                <div id="agro-my-parcels-login-notice" class="agro-login-notice" style="display: none;">
+                    <p>Prijavite se da biste sačuvali i koristili svoje parcele.</p>
+                    <a href="<?php echo esc_url(wp_login_url(get_permalink())); ?>" class="button">Prijava</a>
+                    <a href="<?php echo esc_url(wp_registration_url()); ?>" class="button">Registracija</a>
+                </div>
+            </div>
+
+            <!-- Parcel Modal -->
+            <div id="agro-parcel-modal" class="agro-modal" style="display: none;">
+                <div class="agro-modal-content">
+                    <div class="agro-modal-header">
+                        <h3 id="agro-modal-title">Dodaj Parcelu</h3>
+                        <button type="button" class="agro-modal-close" id="agro-modal-close">&times;</button>
+                    </div>
+                    <div class="agro-modal-body">
+                        <div class="agro-form-group">
+                            <label for="agro-parcel-name">Naziv parcele</label>
+                            <input type="text" id="agro-parcel-name" placeholder="npr. Njiva kod kuće">
+                        </div>
+                        <div class="agro-form-group">
+                            <label>Izaberi način:</label>
+                            <div class="agro-radio-group">
+                                <label><input type="radio" name="agro-parcel-mode" value="draw" checked> Crtaj na mapi</label>
+                                <label><input type="radio" name="agro-parcel-mode" value="cadastral"> Odaberi katastarsku parcelu</label>
+                            </div>
+                        </div>
+                        <div id="agro-modal-cadastral-controls" class="agro-cadastral-controls" style="display: none;">
+                            <label>
+                                <span>Katastarska opština</span>
+                                <select id="agro-modal-katastarska-opstina">
+                                    <option value="">-- Odaberi katastarsku opštinu --</option>
+                                </select>
+                            </label>
+                            <div id="agro-modal-cadastral-info" class="agro-cadastral-info"></div>
+                        </div>
+                        <div id="agro-modal-map" class="agro-modal-map"></div>
+                        <div class="agro-form-group">
+                            <label>Površina: <span id="agro-modal-area">0</span> ha (auto-izračunato)</label>
+                        </div>
+                    </div>
+                    <div class="agro-modal-footer">
+                        <button type="button" class="button" id="agro-modal-cancel">Otkaži</button>
+                        <button type="button" class="button button-primary" id="agro-modal-save" disabled>Sačuvaj</button>
+                    </div>
+                </div>
+            </div>
+
             <div class="agro-tabs" id="agro-parcel-tabs"></div>
             <div class="agro-step" data-step="1">
                 <div class="agro-card">
@@ -371,11 +729,21 @@ class AgroKalkulator
                         <label>
                             <span>Način unosa površine</span>
                             <div class="agro-radio-group">
+                                <label id="agro-saved-parcel-option" style="display: none;"><input type="radio" name="agro-area-mode" value="saved"> Koristi sačuvanu parcelu</label>
                                 <label><input type="radio" name="agro-area-mode" value="map" checked> Iscrtaj parcelu na mapi</label>
                                 <label><input type="radio" name="agro-area-mode" value="cadastral"> Odaberi katastarsku parcelu</label>
                                 <label><input type="radio" name="agro-area-mode" value="manual"> Ručni unos površine</label>
                             </div>
                         </label>
+                        <div id="agro-saved-parcel-controls" class="agro-saved-parcel-controls" style="display: none;">
+                            <label>
+                                <span>Odaberi sačuvanu parcelu</span>
+                                <select id="agro-saved-parcel-select">
+                                    <option value="">-- Odaberi parcelu --</option>
+                                </select>
+                            </label>
+                            <div id="agro-saved-parcel-info" class="agro-cadastral-info"></div>
+                        </div>
                         <div id="agro-cadastral-controls" class="agro-cadastral-controls" style="display: none;">
                             <label>
                                 <span>Katastarska opština</span>
