@@ -1263,6 +1263,774 @@
             });
     }
 
+    // ==========================================
+    // USER PARCELS MANAGEMENT (Moje Parcele)
+    // ==========================================
+
+    const userParcelsState = {
+        parcels: [],
+        isLoading: false,
+        editingParcelId: null,
+    };
+
+    // Modal elements
+    let modalMap = null;
+    let modalDrawnItems = null;
+    let modalCadastralLayer = null;
+    let modalSelectedCadastral = null;
+    let modalGeojson = null;
+    let modalArea = 0;
+    let modalCadastralId = null;
+    let modalCadastralMunicipality = null;
+
+    function initUserParcelsSection() {
+        const section = document.getElementById('agro-my-parcels-section');
+        const loginNotice = document.getElementById('agro-my-parcels-login-notice');
+        const parcelsList = document.getElementById('agro-my-parcels-list');
+        const addBtn = document.getElementById('agro-add-parcel-btn');
+        const savedParcelOption = document.getElementById('agro-saved-parcel-option');
+
+        if (!data.isLoggedIn) {
+            if (loginNotice) loginNotice.style.display = 'block';
+            if (parcelsList) parcelsList.style.display = 'none';
+            if (addBtn) addBtn.style.display = 'none';
+            if (savedParcelOption) savedParcelOption.style.display = 'none';
+            return;
+        }
+
+        if (loginNotice) loginNotice.style.display = 'none';
+        if (parcelsList) parcelsList.style.display = 'block';
+        if (addBtn) addBtn.style.display = 'inline-block';
+        if (savedParcelOption) savedParcelOption.style.display = 'block';
+
+        loadUserParcels();
+        initUserParcelsEvents();
+    }
+
+    function loadUserParcels() {
+        if (userParcelsState.isLoading) return;
+
+        userParcelsState.isLoading = true;
+        const parcelsList = document.getElementById('agro-my-parcels-list');
+
+        if (parcelsList) {
+            parcelsList.innerHTML = '<div class="agro-loading-text">Učitavanje parcela...</div>';
+        }
+
+        fetch(data.restUrl + 'parcels', {
+            method: 'GET',
+            headers: {
+                'X-WP-Nonce': data.restNonce,
+            },
+        })
+        .then(response => {
+            if (!response.ok) {
+                if (response.status === 401) {
+                    throw new Error('Niste prijavljeni');
+                }
+                return response.json().then(err => {
+                    throw new Error(err.message || 'Greška pri učitavanju');
+                });
+            }
+            return response.json();
+        })
+        .then(parcels => {
+            userParcelsState.parcels = parcels;
+            renderUserParcelsList();
+            populateSavedParcelsDropdown();
+        })
+        .catch(error => {
+            console.error('Error loading user parcels:', error);
+            if (parcelsList) {
+                parcelsList.innerHTML = `<div class="agro-error-text">Greška: ${error.message}</div>`;
+            }
+        })
+        .finally(() => {
+            userParcelsState.isLoading = false;
+        });
+    }
+
+    function renderUserParcelsList() {
+        const parcelsList = document.getElementById('agro-my-parcels-list');
+        if (!parcelsList) return;
+
+        if (!userParcelsState.parcels.length) {
+            parcelsList.innerHTML = '<div class="agro-empty-text">Nemate sačuvanih parcela. Kliknite + da dodate novu.</div>';
+            return;
+        }
+
+        let html = '';
+        userParcelsState.parcels.forEach(parcel => {
+            const cadastralInfo = parcel.cadastral_id ? ` (${parcel.cadastral_id})` : '';
+            html += `
+                <div class="agro-my-parcel-item" data-parcel-id="${parcel.id}">
+                    <div class="agro-my-parcel-info">
+                        <span class="agro-my-parcel-name">${escapeHtml(parcel.name)}${cadastralInfo}</span>
+                        <span class="agro-my-parcel-area">${parseFloat(parcel.area_ha).toFixed(4)} ha</span>
+                    </div>
+                    <div class="agro-my-parcel-actions">
+                        <button type="button" class="agro-parcel-edit-btn" data-parcel-id="${parcel.id}" title="Izmeni">&#9998;</button>
+                        <button type="button" class="agro-parcel-delete-btn" data-parcel-id="${parcel.id}" title="Obriši">&#128465;</button>
+                    </div>
+                </div>
+            `;
+        });
+        parcelsList.innerHTML = html;
+    }
+
+    function populateSavedParcelsDropdown() {
+        const select = document.getElementById('agro-saved-parcel-select');
+        if (!select) return;
+
+        select.innerHTML = '<option value="">-- Odaberi parcelu --</option>';
+        userParcelsState.parcels.forEach(parcel => {
+            const opt = document.createElement('option');
+            opt.value = parcel.id;
+            opt.textContent = `${parcel.name} (${parseFloat(parcel.area_ha).toFixed(2)} ha)`;
+            select.appendChild(opt);
+        });
+    }
+
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    function initUserParcelsEvents() {
+        // Add parcel button
+        const addBtn = document.getElementById('agro-add-parcel-btn');
+        if (addBtn) {
+            addBtn.addEventListener('click', () => openParcelModal());
+        }
+
+        // Edit/Delete buttons (event delegation)
+        const parcelsList = document.getElementById('agro-my-parcels-list');
+        if (parcelsList) {
+            parcelsList.addEventListener('click', (e) => {
+                const editBtn = e.target.closest('.agro-parcel-edit-btn');
+                const deleteBtn = e.target.closest('.agro-parcel-delete-btn');
+
+                if (editBtn) {
+                    const parcelId = editBtn.dataset.parcelId;
+                    openParcelModal(parcelId);
+                }
+
+                if (deleteBtn) {
+                    const parcelId = deleteBtn.dataset.parcelId;
+                    deleteUserParcel(parcelId);
+                }
+            });
+        }
+
+        // Modal events
+        initModalEvents();
+
+        // Saved parcel selection in calculator
+        initSavedParcelSelection();
+    }
+
+    function initModalEvents() {
+        const modal = document.getElementById('agro-parcel-modal');
+        const closeBtn = document.getElementById('agro-modal-close');
+        const cancelBtn = document.getElementById('agro-modal-cancel');
+        const saveBtn = document.getElementById('agro-modal-save');
+        const parcelModeRadios = document.querySelectorAll('input[name="agro-parcel-mode"]');
+
+        if (closeBtn) {
+            closeBtn.addEventListener('click', closeParcelModal);
+        }
+
+        if (cancelBtn) {
+            cancelBtn.addEventListener('click', closeParcelModal);
+        }
+
+        if (saveBtn) {
+            saveBtn.addEventListener('click', saveUserParcel);
+        }
+
+        if (modal) {
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    closeParcelModal();
+                }
+            });
+        }
+
+        // Mode toggle
+        parcelModeRadios.forEach(radio => {
+            radio.addEventListener('change', () => {
+                const mode = radio.value;
+                applyModalMode(mode);
+            });
+        });
+
+        // Modal cadastral opština change
+        const modalOpstina = document.getElementById('agro-modal-katastarska-opstina');
+        if (modalOpstina) {
+            modalOpstina.addEventListener('change', function() {
+                const opstina = this.value;
+                if (opstina) {
+                    loadModalCadastralParcels(opstina);
+                } else {
+                    clearModalCadastralLayer();
+                }
+            });
+        }
+
+        // Name input validation
+        const nameInput = document.getElementById('agro-parcel-name');
+        if (nameInput) {
+            nameInput.addEventListener('input', updateModalSaveButton);
+        }
+    }
+
+    function openParcelModal(parcelId = null) {
+        const modal = document.getElementById('agro-parcel-modal');
+        const title = document.getElementById('agro-modal-title');
+        const nameInput = document.getElementById('agro-parcel-name');
+        const saveBtn = document.getElementById('agro-modal-save');
+
+        if (!modal) return;
+
+        // Reset modal state
+        userParcelsState.editingParcelId = parcelId;
+        modalGeojson = null;
+        modalArea = 0;
+        modalCadastralId = null;
+        modalCadastralMunicipality = null;
+
+        if (parcelId) {
+            title.textContent = 'Izmeni Parcelu';
+            loadParcelForEdit(parcelId);
+        } else {
+            title.textContent = 'Dodaj Parcelu';
+            if (nameInput) nameInput.value = '';
+            document.querySelector('input[name="agro-parcel-mode"][value="draw"]').checked = true;
+            applyModalMode('draw');
+        }
+
+        modal.style.display = 'flex';
+
+        // Initialize or invalidate modal map
+        setTimeout(() => {
+            if (!modalMap) {
+                initModalMap();
+            } else {
+                modalMap.invalidateSize();
+            }
+
+            // Load municipalities for modal
+            loadModalMunicipalities();
+        }, 100);
+
+        updateModalArea(0);
+        updateModalSaveButton();
+    }
+
+    function closeParcelModal() {
+        const modal = document.getElementById('agro-parcel-modal');
+        if (modal) {
+            modal.style.display = 'none';
+        }
+
+        // Clear modal state
+        userParcelsState.editingParcelId = null;
+        modalGeojson = null;
+        modalArea = 0;
+        modalCadastralId = null;
+        modalCadastralMunicipality = null;
+
+        // Clear modal map layers
+        if (modalDrawnItems) {
+            modalDrawnItems.clearLayers();
+        }
+        clearModalCadastralLayer();
+
+        // Reset name input
+        const nameInput = document.getElementById('agro-parcel-name');
+        if (nameInput) nameInput.value = '';
+    }
+
+    function initModalMap() {
+        const mapEl = document.getElementById('agro-modal-map');
+        if (!mapEl) return;
+
+        modalMap = L.map(mapEl).setView([44.7872, 20.4573], 7);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap'
+        }).addTo(modalMap);
+
+        modalDrawnItems = new L.FeatureGroup();
+        modalMap.addLayer(modalDrawnItems);
+
+        const drawControl = new L.Control.Draw({
+            edit: { featureGroup: modalDrawnItems },
+            draw: { polygon: true, rectangle: true, circle: false, marker: false, polyline: false }
+        });
+        modalMap.addControl(drawControl);
+
+        modalMap.on(L.Draw.Event.CREATED, (e) => {
+            modalDrawnItems.clearLayers();
+            modalDrawnItems.addLayer(e.layer);
+            const geojson = e.layer.toGeoJSON();
+            modalGeojson = geojson.geometry;
+            const area = L.GeometryUtil.geodesicArea(e.layer.getLatLngs()[0]) / 10000;
+            modalArea = area;
+            updateModalArea(area);
+            updateModalSaveButton();
+        });
+
+        modalMap.on(L.Draw.Event.EDITED, (e) => {
+            const layers = e.layers.getLayers();
+            if (layers.length) {
+                const geojson = layers[0].toGeoJSON();
+                modalGeojson = geojson.geometry;
+                const area = L.GeometryUtil.geodesicArea(layers[0].getLatLngs()[0]) / 10000;
+                modalArea = area;
+                updateModalArea(area);
+                updateModalSaveButton();
+            }
+        });
+
+        modalMap.whenReady(() => {
+            modalMap.invalidateSize();
+        });
+    }
+
+    function applyModalMode(mode) {
+        const cadastralControls = document.getElementById('agro-modal-cadastral-controls');
+        const drawControl = modalMap ? modalMap._controlContainer.querySelector('.leaflet-draw') : null;
+
+        if (mode === 'cadastral') {
+            if (cadastralControls) cadastralControls.style.display = 'block';
+            if (drawControl) drawControl.style.display = 'none';
+            if (modalDrawnItems) modalDrawnItems.clearLayers();
+            modalGeojson = null;
+            modalArea = 0;
+            updateModalArea(0);
+        } else {
+            if (cadastralControls) cadastralControls.style.display = 'none';
+            if (drawControl) drawControl.style.display = 'block';
+            clearModalCadastralLayer();
+            modalCadastralId = null;
+            modalCadastralMunicipality = null;
+        }
+        updateModalSaveButton();
+    }
+
+    function loadModalMunicipalities() {
+        const select = document.getElementById('agro-modal-katastarska-opstina');
+        if (!select) return;
+
+        fetch(data.restUrl + 'opstine', {
+            method: 'GET',
+            headers: {
+                'X-WP-Nonce': data.restNonce,
+            },
+        })
+        .then(response => response.json())
+        .then(data => {
+            select.innerHTML = '<option value="">-- Odaberi katastarsku opštinu --</option>';
+            (data.opstine || []).forEach(opstina => {
+                const opt = document.createElement('option');
+                opt.value = opstina.value;
+                opt.textContent = opstina.label;
+                select.appendChild(opt);
+            });
+        })
+        .catch(error => {
+            console.error('Error loading municipalities:', error);
+        });
+    }
+
+    function loadModalCadastralParcels(opstina) {
+        clearModalCadastralLayer();
+
+        const info = document.getElementById('agro-modal-cadastral-info');
+        if (info) {
+            info.innerHTML = '<span class="agro-loading-text">Učitavanje parcela...</span>';
+        }
+
+        fetch(data.restUrl + 'parcele?opstina=' + encodeURIComponent(opstina), {
+            method: 'GET',
+            headers: {
+                'X-WP-Nonce': data.restNonce,
+            },
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Greška pri učitavanju');
+            }
+            return response.json();
+        })
+        .then(geojson => {
+            if (!geojson || !geojson.features || !geojson.features.length) {
+                if (info) {
+                    info.innerHTML = '<span class="agro-cadastral-error">Nema parcela za odabranu opštinu.</span>';
+                }
+                return;
+            }
+
+            modalCadastralLayer = L.geoJSON(geojson, {
+                style: function() {
+                    return cadastralStyles.default;
+                },
+                onEachFeature: function(feature, layer) {
+                    layer.on('mouseover', function() {
+                        if (modalSelectedCadastral !== layer) {
+                            layer.setStyle(cadastralStyles.hover);
+                        }
+                    });
+                    layer.on('mouseout', function() {
+                        if (modalSelectedCadastral !== layer) {
+                            layer.setStyle(cadastralStyles.default);
+                        }
+                    });
+                    layer.on('click', function() {
+                        selectModalCadastralParcel(feature, layer, opstina);
+                    });
+
+                    const props = feature.properties || {};
+                    layer.bindTooltip(`Parcela: ${props.brparcele || 'N/A'}`, {
+                        permanent: false,
+                        direction: 'top',
+                        className: 'agro-cadastral-tooltip',
+                    });
+                },
+            });
+
+            modalCadastralLayer.addTo(modalMap);
+
+            const bounds = modalCadastralLayer.getBounds();
+            if (bounds.isValid()) {
+                modalMap.fitBounds(bounds);
+            }
+
+            if (info) {
+                info.innerHTML = `<span class="agro-cadastral-success">Učitano ${geojson.features.length} parcela. Kliknite na parcelu da je odaberete.</span>`;
+            }
+        })
+        .catch(error => {
+            console.error('Error loading cadastral data:', error);
+            if (info) {
+                info.innerHTML = `<span class="agro-cadastral-error">Greška: ${error.message}</span>`;
+            }
+        });
+    }
+
+    function clearModalCadastralLayer() {
+        if (modalCadastralLayer && modalMap) {
+            modalMap.removeLayer(modalCadastralLayer);
+            modalCadastralLayer = null;
+        }
+        modalSelectedCadastral = null;
+
+        const info = document.getElementById('agro-modal-cadastral-info');
+        if (info) info.innerHTML = '';
+    }
+
+    function selectModalCadastralParcel(feature, layer, municipality) {
+        if (modalSelectedCadastral) {
+            modalSelectedCadastral.setStyle(cadastralStyles.default);
+        }
+
+        modalSelectedCadastral = layer;
+        layer.setStyle(cadastralStyles.selected);
+
+        const props = feature.properties || {};
+        const areaM2 = parseFloat(props.povrsina) || 0;
+        const areaHa = areaM2 / 10000;
+
+        modalGeojson = feature.geometry;
+        modalArea = areaHa;
+        modalCadastralId = props.brparcele || null;
+        modalCadastralMunicipality = municipality;
+
+        updateModalArea(areaHa);
+
+        const info = document.getElementById('agro-modal-cadastral-info');
+        if (info) {
+            info.innerHTML = `
+                <div class="agro-cadastral-selected">
+                    <strong>Odabrana parcela:</strong><br>
+                    Broj parcele: ${props.brparcele || 'N/A'}<br>
+                    Površina: ${areaHa.toFixed(4)} ha
+                </div>
+            `;
+        }
+
+        modalMap.fitBounds(layer.getBounds(), { padding: [50, 50] });
+        updateModalSaveButton();
+    }
+
+    function updateModalArea(area) {
+        const areaSpan = document.getElementById('agro-modal-area');
+        if (areaSpan) {
+            areaSpan.textContent = parseFloat(area).toFixed(4);
+        }
+    }
+
+    function updateModalSaveButton() {
+        const saveBtn = document.getElementById('agro-modal-save');
+        const nameInput = document.getElementById('agro-parcel-name');
+
+        if (!saveBtn) return;
+
+        const hasName = nameInput && nameInput.value.trim().length > 0;
+        const hasGeometry = modalGeojson !== null && modalArea > 0;
+
+        saveBtn.disabled = !(hasName && hasGeometry);
+    }
+
+    function loadParcelForEdit(parcelId) {
+        fetch(data.restUrl + 'parcels/' + parcelId, {
+            method: 'GET',
+            headers: {
+                'X-WP-Nonce': data.restNonce,
+            },
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Parcela nije pronađena');
+            }
+            return response.json();
+        })
+        .then(parcel => {
+            const nameInput = document.getElementById('agro-parcel-name');
+            if (nameInput) nameInput.value = parcel.name;
+
+            modalGeojson = parcel.geojson;
+            modalArea = parseFloat(parcel.area_ha);
+            modalCadastralId = parcel.cadastral_id;
+            modalCadastralMunicipality = parcel.cadastral_municipality;
+
+            updateModalArea(modalArea);
+
+            // Render geometry on modal map
+            setTimeout(() => {
+                if (modalMap && parcel.geojson) {
+                    const layer = L.geoJSON(parcel.geojson);
+                    modalDrawnItems.clearLayers();
+                    layer.eachLayer(l => modalDrawnItems.addLayer(l));
+                    modalMap.fitBounds(layer.getBounds());
+                }
+                updateModalSaveButton();
+            }, 200);
+        })
+        .catch(error => {
+            console.error('Error loading parcel:', error);
+            showToast('Greška pri učitavanju parcele: ' + error.message, 'error');
+        });
+    }
+
+    function saveUserParcel() {
+        const nameInput = document.getElementById('agro-parcel-name');
+        const saveBtn = document.getElementById('agro-modal-save');
+
+        if (!nameInput || !modalGeojson || modalArea <= 0) {
+            showToast('Molimo popunite sve podatke', 'error');
+            return;
+        }
+
+        const name = nameInput.value.trim();
+        if (!name) {
+            showToast('Naziv parcele je obavezan', 'error');
+            return;
+        }
+
+        setButtonLoading(saveBtn, true);
+
+        const payload = {
+            name: name,
+            geojson: modalGeojson,
+            area_ha: parseFloat(modalArea.toFixed(4)),
+            cadastral_id: modalCadastralId,
+            cadastral_municipality: modalCadastralMunicipality,
+        };
+
+        const isEdit = userParcelsState.editingParcelId !== null;
+        const url = isEdit
+            ? data.restUrl + 'parcels/' + userParcelsState.editingParcelId
+            : data.restUrl + 'parcels';
+        const method = isEdit ? 'PUT' : 'POST';
+
+        fetch(url, {
+            method: method,
+            headers: {
+                'Content-Type': 'application/json',
+                'X-WP-Nonce': data.restNonce,
+            },
+            body: JSON.stringify(payload),
+        })
+        .then(response => {
+            if (!response.ok) {
+                return response.json().then(err => {
+                    throw new Error(err.message || 'Greška pri čuvanju');
+                });
+            }
+            return response.json();
+        })
+        .then(result => {
+            showToast(isEdit ? 'Parcela je uspešno ažurirana!' : 'Parcela je uspešno sačuvana!', 'success');
+            closeParcelModal();
+            loadUserParcels();
+        })
+        .catch(error => {
+            console.error('Error saving parcel:', error);
+            showToast('Greška: ' + error.message, 'error');
+        })
+        .finally(() => {
+            setButtonLoading(saveBtn, false);
+        });
+    }
+
+    function deleteUserParcel(parcelId) {
+        if (!confirm('Da li ste sigurni da želite da obrišete ovu parcelu?')) {
+            return;
+        }
+
+        fetch(data.restUrl + 'parcels/' + parcelId, {
+            method: 'DELETE',
+            headers: {
+                'X-WP-Nonce': data.restNonce,
+            },
+        })
+        .then(response => {
+            if (!response.ok) {
+                return response.json().then(err => {
+                    throw new Error(err.message || 'Greška pri brisanju');
+                });
+            }
+            return response.json();
+        })
+        .then(() => {
+            showToast('Parcela je uspešno obrisana!', 'success');
+            loadUserParcels();
+        })
+        .catch(error => {
+            console.error('Error deleting parcel:', error);
+            showToast('Greška: ' + error.message, 'error');
+        });
+    }
+
+    // ==========================================
+    // SAVED PARCEL SELECTION IN CALCULATOR
+    // ==========================================
+
+    function initSavedParcelSelection() {
+        const savedParcelControls = document.getElementById('agro-saved-parcel-controls');
+        const savedParcelSelect = document.getElementById('agro-saved-parcel-select');
+
+        // Handle area mode change for saved parcels
+        els.areaModeRadios.forEach(radio => {
+            radio.addEventListener('change', () => {
+                if (radio.value === 'saved') {
+                    if (savedParcelControls) savedParcelControls.style.display = 'block';
+                    const mapEl = document.getElementById('agro-map');
+                    if (mapEl) mapEl.style.display = 'block';
+                    if (map) {
+                        setTimeout(() => map.invalidateSize(), 50);
+                    }
+                    // Hide cadastral controls
+                    if (els.cadastralControls) els.cadastralControls.style.display = 'none';
+                    // Clear drawn items
+                    if (drawnItems) drawnItems.clearLayers();
+                    clearCadastralLayer();
+                    // Hide draw control
+                    const drawControl = map ? map._controlContainer.querySelector('.leaflet-draw') : null;
+                    if (drawControl) drawControl.style.display = 'none';
+                } else {
+                    if (savedParcelControls) savedParcelControls.style.display = 'none';
+                }
+            });
+        });
+
+        // Handle saved parcel selection
+        if (savedParcelSelect) {
+            savedParcelSelect.addEventListener('change', function() {
+                const parcelId = this.value;
+                if (parcelId) {
+                    loadSavedParcelToCalculator(parcelId);
+                } else {
+                    // Clear selection
+                    setAreaDisplayValue('');
+                    if (drawnItems) drawnItems.clearLayers();
+                    const parcel = getActiveParcel();
+                    if (parcel) {
+                        parcel.fieldAreaHa = 0;
+                        parcel.savedParcelId = null;
+                    }
+                    const infoDiv = document.getElementById('agro-saved-parcel-info');
+                    if (infoDiv) infoDiv.innerHTML = '';
+                }
+            });
+        }
+    }
+
+    function loadSavedParcelToCalculator(parcelId) {
+        fetch(data.restUrl + 'parcels/' + parcelId, {
+            method: 'GET',
+            headers: {
+                'X-WP-Nonce': data.restNonce,
+            },
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Parcela nije pronađena');
+            }
+            return response.json();
+        })
+        .then(parcel => {
+            const activeParcel = getActiveParcel();
+            if (activeParcel) {
+                activeParcel.fieldAreaHa = parseFloat(parcel.area_ha);
+                activeParcel.savedParcelId = parcel.id;
+                activeParcel.savedParcelName = parcel.name;
+                activeParcel.cadastralParcelId = parcel.cadastral_id || '';
+                activeParcel.cadastralOpstina = parcel.cadastral_municipality || '';
+            }
+
+            setAreaDisplayValue(parseFloat(parcel.area_ha).toFixed(4));
+
+            // Display parcel on map
+            if (drawnItems) {
+                drawnItems.clearLayers();
+            }
+
+            if (parcel.geojson && map) {
+                const layer = L.geoJSON(parcel.geojson, {
+                    style: {
+                        color: '#2196F3',
+                        weight: 3,
+                        fillColor: '#2196F3',
+                        fillOpacity: 0.3,
+                    }
+                });
+                layer.eachLayer(l => drawnItems.addLayer(l));
+                map.fitBounds(layer.getBounds());
+            }
+
+            // Update info
+            const infoDiv = document.getElementById('agro-saved-parcel-info');
+            if (infoDiv) {
+                const cadastralInfo = parcel.cadastral_id ? `<br>Katastarska parcela: ${parcel.cadastral_id}` : '';
+                infoDiv.innerHTML = `
+                    <div class="agro-cadastral-selected">
+                        <strong>Odabrana parcela:</strong> ${escapeHtml(parcel.name)}<br>
+                        Površina: ${parseFloat(parcel.area_ha).toFixed(4)} ha${cadastralInfo}
+                    </div>
+                `;
+            }
+
+            showToast(`Učitana parcela: ${parcel.name}`, 'success');
+        })
+        .catch(error => {
+            console.error('Error loading saved parcel:', error);
+            showToast('Greška pri učitavanju parcele: ' + error.message, 'error');
+        });
+    }
+
     document.addEventListener('DOMContentLoaded', () => {
         initSelects();
         state.parcels.push(createEmptyParcel());
@@ -1272,5 +2040,6 @@
         loadParcelToForm(getActiveParcel());
         initEvents();
         initCadastralEvents();
+        initUserParcelsSection();
     });
 })();
