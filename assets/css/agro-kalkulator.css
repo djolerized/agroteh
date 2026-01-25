@@ -866,3 +866,366 @@
 
 .font-weight-bold { font-weight: 500; }
 .font-weight-normal { font-weight: 400; }
+
+/* ============================================
+   User Parcels Management (Moje Parcele)
+   ============================================ */
+.agro-my-parcels-card {
+    margin-bottom: var(--spacing-lg);
+}
+
+.agro-my-parcels-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--spacing-md);
+    padding-bottom: var(--spacing-md);
+    border-bottom: 2px solid var(--divider);
+}
+
+.agro-my-parcels-header h3 {
+    margin: 0;
+}
+
+.agro-add-parcel-btn {
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    border-radius: 50%;
+    font-size: 24px;
+    font-weight: 300;
+    min-width: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.agro-my-parcels-list {
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.agro-my-parcel-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--spacing-md);
+    border: 2px solid var(--divider);
+    border-radius: var(--radius-sm);
+    margin-bottom: var(--spacing-sm);
+    background: var(--surface);
+    transition: all var(--transition-fast);
+}
+
+.agro-my-parcel-item:hover {
+    border-color: var(--primary-light);
+    box-shadow: var(--elevation-1);
+}
+
+.agro-my-parcel-item:last-child {
+    margin-bottom: 0;
+}
+
+.agro-my-parcel-info {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+}
+
+.agro-my-parcel-name {
+    font-weight: 500;
+    color: var(--text-primary);
+    font-size: 15px;
+}
+
+.agro-my-parcel-area {
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.agro-my-parcel-actions {
+    display: flex;
+    gap: var(--spacing-sm);
+}
+
+.agro-parcel-edit-btn,
+.agro-parcel-delete-btn {
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    font-size: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.agro-parcel-edit-btn {
+    color: var(--primary-color);
+}
+
+.agro-parcel-edit-btn:hover {
+    background: rgba(25, 118, 210, 0.1);
+}
+
+.agro-parcel-delete-btn {
+    color: var(--error-color);
+}
+
+.agro-parcel-delete-btn:hover {
+    background: rgba(211, 47, 47, 0.1);
+}
+
+.agro-login-notice {
+    text-align: center;
+    padding: var(--spacing-lg);
+    background: rgba(25, 118, 210, 0.04);
+    border-radius: var(--radius-md);
+    border: 2px dashed var(--divider);
+}
+
+.agro-login-notice p {
+    margin: 0 0 var(--spacing-md) 0;
+    color: var(--text-secondary);
+    font-size: 15px;
+}
+
+.agro-login-notice .button {
+    margin: 0 var(--spacing-sm);
+}
+
+.agro-empty-text {
+    text-align: center;
+    padding: var(--spacing-lg);
+    color: var(--text-secondary);
+    font-style: italic;
+}
+
+.agro-loading-text {
+    color: var(--primary-color);
+    font-style: italic;
+}
+
+.agro-error-text {
+    color: var(--error-color);
+    text-align: center;
+    padding: var(--spacing-md);
+}
+
+/* ============================================
+   Parcel Modal
+   ============================================ */
+.agro-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10001;
+    padding: var(--spacing-md);
+}
+
+.agro-modal-content {
+    background: var(--surface);
+    border-radius: var(--radius-md);
+    box-shadow: var(--elevation-4);
+    width: 100%;
+    max-width: 800px;
+    max-height: 90vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    animation: modalSlideIn var(--transition-normal);
+}
+
+@keyframes modalSlideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.agro-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--spacing-md) var(--spacing-lg);
+    border-bottom: 2px solid var(--divider);
+    background: var(--primary-color);
+}
+
+.agro-modal-header h3 {
+    margin: 0;
+    color: white;
+}
+
+.agro-modal-close {
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+    font-size: 24px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all var(--transition-fast);
+}
+
+.agro-modal-close:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+.agro-modal-body {
+    padding: var(--spacing-lg);
+    overflow-y: auto;
+    flex: 1;
+}
+
+.agro-modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--spacing-md);
+    padding: var(--spacing-md) var(--spacing-lg);
+    border-top: 2px solid var(--divider);
+    background: rgba(0, 0, 0, 0.02);
+}
+
+.agro-form-group {
+    margin-bottom: var(--spacing-md);
+}
+
+.agro-form-group label {
+    display: block;
+    margin-bottom: var(--spacing-sm);
+    font-weight: 500;
+    font-size: 14px;
+    color: var(--text-secondary);
+}
+
+.agro-form-group input[type="text"],
+.agro-form-group input[type="number"] {
+    width: 100%;
+    padding: 12px 16px;
+    border: 2px solid var(--divider);
+    border-radius: var(--radius-sm);
+    font-size: 16px;
+    font-family: inherit;
+    color: var(--text-primary);
+    background-color: var(--surface);
+    transition: all var(--transition-fast);
+    box-sizing: border-box;
+}
+
+.agro-form-group input:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(25, 118, 210, 0.1);
+}
+
+.agro-modal-map {
+    height: 350px;
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    margin-bottom: var(--spacing-md);
+    box-shadow: var(--elevation-1);
+}
+
+/* ============================================
+   Saved Parcel Selection in Calculator
+   ============================================ */
+.agro-saved-parcel-controls {
+    background: rgba(25, 118, 210, 0.04);
+    padding: var(--spacing-md);
+    border-radius: var(--radius-md);
+    border: 2px solid var(--divider);
+    margin-bottom: var(--spacing-md);
+}
+
+.agro-saved-parcel-controls label {
+    display: flex;
+    flex-direction: column;
+}
+
+.agro-saved-parcel-controls label span {
+    display: block;
+    margin-bottom: var(--spacing-sm);
+    font-weight: 500;
+    font-size: 14px;
+    color: var(--text-secondary);
+}
+
+.agro-saved-parcel-controls select {
+    width: 100%;
+    padding: 12px 16px;
+    border: 2px solid var(--divider);
+    border-radius: var(--radius-sm);
+    font-size: 16px;
+    font-family: inherit;
+    color: var(--text-primary);
+    background-color: var(--surface);
+    transition: all var(--transition-fast);
+    box-sizing: border-box;
+}
+
+.agro-saved-parcel-controls select:hover {
+    border-color: rgba(0, 0, 0, 0.24);
+}
+
+.agro-saved-parcel-controls select:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(25, 118, 210, 0.1);
+}
+
+/* ============================================
+   Modal Responsive Styles
+   ============================================ */
+@media (max-width: 768px) {
+    .agro-modal-content {
+        max-width: 100%;
+        max-height: 100vh;
+        border-radius: 0;
+    }
+
+    .agro-modal-map {
+        height: 250px;
+    }
+
+    .agro-modal-footer {
+        flex-direction: column;
+    }
+
+    .agro-modal-footer .button {
+        width: 100%;
+    }
+
+    .agro-my-parcels-list {
+        max-height: 200px;
+    }
+
+    .agro-my-parcel-item {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: var(--spacing-sm);
+    }
+
+    .agro-my-parcel-actions {
+        align-self: flex-end;
+    }
+}
